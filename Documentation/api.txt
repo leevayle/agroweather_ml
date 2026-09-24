@@ -1,0 +1,911 @@
+AGROWEATHER BACKEND API REFERENCE (LEE KINANGA & GROUP +254748673538) KISII UNIVERSITY
+======================================================================================
+
+Version: 1.0.0
+Project: AgroWeather
+Backend: FastAPI
+Purpose: Current-weather and ML-forecast API
+
+This document covers ONLY the BACKEND API.
+The ESP32 sensor-upload endpoint is intentionally excluded.
+
+1. WHERE THE API LIVES
+======================
+
+Backend / ML folder:
+
+C:\agroweather\ml
+
+Important files:
+
+C:\agroweather\ml\
+    api.py
+    forecast_engine.py
+    train_temperature.py
+    train_rainfall.py
+    train_windspeed.py
+    train_pressure.py
+
+ML models:
+
+C:\agroweather\ml\models\
+    temperature_avg_model.pkl
+    temperature_min_model.pkl
+    temperature_max_model.pkl
+    rain_classifier.pkl
+    rainfall_amount_model.pkl
+    wind_speed_model.pkl
+    pressure_model.pkl
+
+Historical data:
+
+C:\agroweather\ml\data\
+    045_kisii_cleaned.csv
+    kisii_consecutive.csv
+
+Virtual environment:
+
+C:\agroweather\.venv
+
+
+2. WHAT THE API PROVIDES
+========================
+
+GET  /                  Current weather
+GET  /health            API health/status
+GET  /forecast          Standard ML forecast
+GET  /forecast/range    Custom date-range ML forecast
+GET  /docs              Interactive Swagger documentation
+GET  /redoc             Alternative API documentation
+
+The backend also has an internal ESP32 sensor-ingestion endpoint,
+but it is intentionally NOT documented in this reference.
+
+
+3. START THE API
+================
+
+Open PowerShell and run:
+
+    cd C:\agroweather\ml
+
+Activate the virtual environment:
+
+    C:\agroweather\.venv\Scripts\Activate.ps1
+
+Expected prompt:
+
+    (.venv) PS C:\agroweather\ml>
+
+Start FastAPI:
+
+    uvicorn api:app --host 0.0.0.0 --port 8000 --reload
+
+Expected:
+
+    INFO: Uvicorn running on http://0.0.0.0:8000
+    INFO: Application startup complete.
+
+
+4. API BASE URL
+===============
+
+Same computer:
+
+    http://127.0.0.1:8000
+
+or:
+
+    http://localhost:8000
+
+Another device on the same LAN:
+
+    http://YOUR-PC-IP:8000
+
+Example:
+
+    http://192.168.1.105:8000
+
+Do not use 127.0.0.1 from another device.
+
+
+5. API STARTUP AND PERFORMANCE
+==============================
+
+When FastAPI starts, api.py imports forecast_engine.py.
+The trained ML models are loaded into memory once.
+
+The intended flow is:
+
+    API starts
+        |
+        +--> load ML models into RAM
+        |
+        +--> start server
+        |
+        +--> serve requests
+
+Models should not be loaded from disk for every request.
+
+The normal forecast is also cached, so repeated requests do not
+unnecessarily recalculate the same forecast.
+
+
+6. ENDPOINT SUMMARY
+===================
+
++-------------------+--------+----------------------------------+
+| Endpoint          | Method | Purpose                          |
++-------------------+--------+----------------------------------+
+| /                 | GET    | Current weather                  |
+| /health           | GET    | API health/status                |
+| /forecast         | GET    | Standard ML forecast             |
+| /forecast/range   | GET    | Custom date-range forecast       |
+| /docs             | GET    | Interactive Swagger UI           |
+| /redoc            | GET    | Alternative documentation        |
++-------------------+--------+----------------------------------+
+
+
+7. GET /
+=========
+
+Purpose:
+    Returns the latest current-weather data held by the backend.
+
+Request:
+
+    GET /
+
+Example:
+
+    http://127.0.0.1:8000/
+
+Example response:
+
+    {
+      "status": "success",
+      "type": "current_weather",
+      "data": {
+        "temperature_c": 21.7,
+        "humidity_percent": 78.4,
+        "day_night": "day",
+        "rainfall_mm": 2.3,
+        "rain_status": "raining",
+        "wind_speed_kmh": 9.8,
+        "wind_direction": "NE",
+        "pressure_hpa": 1014.8,
+        "timestamp": "2026-09-24T18:35:12",
+        "source": "ESP32"
+      }
+    }
+
+Important fields:
+
+    temperature_c
+        Current temperature in Celsius.
+
+    humidity_percent
+        Current relative humidity percentage.
+
+    day_night
+        Day/night state.
+
+    rainfall_mm
+        Current/recent rainfall measurement.
+
+    rain_status
+        Human-readable rain state.
+
+    wind_speed_kmh
+        Current wind speed.
+
+    wind_direction
+        Current wind direction.
+
+    pressure_hpa
+        Atmospheric pressure in hPa.
+
+    timestamp
+        Time the backend last received the reading.
+
+    source
+        Current data source, normally ESP32.
+
+If no sensor data is available, values may be null:
+
+    "temperature_c": null
+
+The frontend should show something such as:
+
+    Waiting for station data...
+
+or:
+
+    --
+
+
+8. GET /health
+===============
+
+Purpose:
+    Checks whether the API is running.
+
+Request:
+
+    GET /health
+
+Example:
+
+    http://127.0.0.1:8000/health
+
+Expected response:
+
+    {
+      "status": "healthy",
+      "api": "running",
+      "models": "loaded"
+    }
+
+Useful for:
+    - testing the server
+    - debugging
+    - frontend health checks
+    - confirming models loaded
+
+
+9. GET /forecast
+================
+
+Purpose:
+    Returns the standard ML weather forecast.
+
+Default:
+    5 days
+
+Request:
+
+    GET /forecast
+
+Example:
+
+    http://127.0.0.1:8000/forecast
+
+Response structure:
+
+    {
+      "status": "success",
+      "forecast_days": 5,
+      "forecast": [
+        {
+          "date": "2025-10-25",
+          "temperature": {
+            "avg_c": 19.58,
+            "min_c": 15.92,
+            "max_c": 25.24
+          },
+          "rainfall": {
+            "rain": true,
+            "probability": 0.80,
+            "amount_mm": 4.2
+          },
+          "wind_speed": 9.5,
+          "pressure_hpa": 1014.7
+        }
+      ]
+    }
+
+
+10. GET /forecast?days=N
+========================
+
+Purpose:
+    Requests a specific number of forecast days.
+
+Example:
+
+    http://127.0.0.1:8000/forecast?days=7
+
+Supported range:
+
+    Minimum: 1 day
+    Maximum: 30 days
+
+Examples:
+
+    /forecast?days=5
+    /forecast?days=7
+    /forecast?days=14
+    /forecast?days=30
+
+Invalid:
+
+    /forecast?days=0
+
+Expected:
+    HTTP 400 Bad Request
+
+Invalid:
+
+    /forecast?days=31
+
+Expected:
+    HTTP 400 Bad Request
+
+
+11. FORECAST RESPONSE FIELDS
+============================
+
+Each forecast day contains:
+
+    date
+        Forecast date in YYYY-MM-DD format.
+
+    temperature.avg_c
+        Predicted average temperature in Celsius.
+
+    temperature.min_c
+        Predicted minimum temperature in Celsius.
+
+    temperature.max_c
+        Predicted maximum temperature in Celsius.
+
+    rainfall.rain
+        Boolean indicating whether rain is predicted.
+
+    rainfall.probability
+        Model probability from the rain/no-rain classifier.
+        Example: 0.82 means an 82% model probability, not a
+        guarantee.
+
+    rainfall.amount_mm
+        Predicted rainfall amount in millimetres.
+
+    wind_speed
+        Predicted wind speed.
+
+    pressure_hpa
+        Predicted pressure in hPa.
+
+
+12. GET /forecast/range
+=======================
+
+Purpose:
+    Requests a forecast for a specific date range.
+
+Format:
+
+    GET /forecast/range?start_date=YYYY-MM-DD&end_date=YYYY-MM-DD
+
+Example:
+
+    http://127.0.0.1:8000/forecast/range?start_date=2025-11-01&end_date=2025-11-07
+
+This requests 7 days.
+
+Response:
+
+    {
+      "status": "success",
+      "start_date": "2025-11-01",
+      "end_date": "2025-11-07",
+      "forecast_days": 7,
+      "forecast": [
+        ...
+      ]
+    }
+
+Date format must be:
+
+    YYYY-MM-DD
+
+Correct:
+
+    2025-11-01
+
+Incorrect:
+
+    01/11/2025
+
+
+13. FORECAST RANGE LIMIT
+========================
+
+Maximum range:
+
+    30 days
+
+Example of a valid 30-day request:
+
+    /forecast/range?start_date=2025-11-01&end_date=2025-11-30
+
+A range longer than 30 days returns:
+
+    HTTP 400 Bad Request
+
+
+14. FORECAST BEHAVIOUR
+======================
+
+The current ML system is recursive.
+
+Conceptually:
+
+    Day 1 prediction
+        |
+        v
+    helps predict Day 2
+        |
+        v
+    helps predict Day 3
+        |
+        v
+       ...
+
+Because predictions are reused for later predictions, uncertainty
+can accumulate over longer forecast horizons.
+
+Forecasts are model predictions, not guarantees.
+
+
+15. CURRENT ML VARIABLES
+========================
+
+The current ML API predicts:
+
+    Average temperature
+    Minimum temperature
+    Maximum temperature
+    Rain/no-rain
+    Rainfall amount
+    Wind speed
+    Atmospheric pressure
+
+The current historical CSV does not contain sufficient historical
+data for ML forecasting of:
+
+    Humidity
+    Wind direction
+
+Those can still be displayed as live station measurements.
+
+
+16. CURRENT DEVELOPMENT DATA
+============================
+
+Current prepared historical dataset:
+
+    C:\agroweather\ml\data\kisii_consecutive.csv
+
+The current forecast engine is still based on the historical
+development dataset.
+
+The production architecture will eventually use the latest real
+station observation plus MongoDB historical data.
+
+
+17. API DOCUMENTATION
+=====================
+
+Swagger UI:
+
+    http://127.0.0.1:8000/docs
+
+Swagger lets you:
+
+    - view every endpoint
+    - read parameters
+    - execute requests
+    - inspect JSON responses
+    - test the API without writing code
+
+Alternative documentation:
+
+    http://127.0.0.1:8000/redoc
+
+
+18. JAVASCRIPT FRONTEND EXAMPLES
+================================
+
+Current weather:
+
+    fetch("http://127.0.0.1:8000/")
+        .then(response => response.json())
+        .then(data => {
+            console.log(data);
+        });
+
+7-day forecast:
+
+    fetch("http://127.0.0.1:8000/forecast?days=7")
+        .then(response => response.json())
+        .then(data => {
+            console.log(data);
+        });
+
+Custom range:
+
+    fetch(
+        "http://127.0.0.1:8000/forecast/range" +
+        "?start_date=2025-11-01" +
+        "&end_date=2025-11-07"
+    )
+        .then(response => response.json())
+        .then(data => {
+            console.log(data);
+        });
+
+
+19. PYTHON REQUESTS EXAMPLES
+============================
+
+Install:
+
+    pip install requests
+
+Current weather:
+
+    import requests
+
+    response = requests.get(
+        "http://127.0.0.1:8000/"
+    )
+
+    print(response.status_code)
+    print(response.json())
+
+7-day forecast:
+
+    import requests
+
+    response = requests.get(
+        "http://127.0.0.1:8000/forecast",
+        params={"days": 7}
+    )
+
+    print(response.status_code)
+    print(response.json())
+
+Custom range:
+
+    import requests
+
+    response = requests.get(
+        "http://127.0.0.1:8000/forecast/range",
+        params={
+            "start_date": "2025-11-01",
+            "end_date": "2025-11-07"
+        }
+    )
+
+    print(response.status_code)
+    print(response.json())
+
+
+20. HTTP STATUS CODES
+=====================
+
+200 OK
+    Request succeeded.
+
+400 Bad Request
+    Invalid request parameters.
+
+Examples:
+    days < 1
+    days > 30
+    invalid date range
+    range > 30 days
+
+500 Internal Server Error
+    An unexpected backend error occurred.
+
+For 500 errors, check the Uvicorn terminal for the traceback.
+
+
+21. PERFORMANCE DESIGN
+======================
+
+ML models:
+
+    Loaded once at API startup
+        |
+        v
+    kept in RAM
+        |
+        v
+    reused by requests
+
+
+Current weather:
+
+    latest reading
+        |
+        v
+    in-memory current_weather
+        |
+        v
+    GET /
+
+
+Normal forecast:
+
+    first request
+        |
+        v
+    forecast calculation
+        |
+        v
+    cached in RAM
+
+Later requests:
+
+    GET /forecast
+        |
+        v
+    cached result
+
+
+This prevents repeated disk model loading and unnecessary
+forecast calculations.
+
+
+22. FUTURE PRODUCTION ARCHITECTURE
+==================================
+
+Planned architecture:
+
+    ESP32
+       |
+       v
+    FastAPI
+       |
+       +------> latest reading in RAM
+       |
+       +------> MongoDB
+                    |
+                    v
+              historical data
+                    |
+                    v
+              ML forecast engine
+                    |
+                    v
+              forecast cache
+                    |
+                    v
+                  FastAPI
+                    |
+                    v
+                Web frontend
+
+
+23. TROUBLESHOOTING
+===================
+
+Problem:
+    'uvicorn' is not recognized.
+
+Fix:
+
+    C:\agroweather\.venv\Scripts\Activate.ps1
+
+Then:
+
+    uvicorn api:app --host 0.0.0.0 --port 8000 --reload
+
+
+Problem:
+    No module named fastapi
+
+Fix:
+
+    pip install fastapi uvicorn requests
+
+
+Problem:
+    No module named joblib
+
+Fix:
+
+    pip install joblib
+
+
+Problem:
+    Forecast fails because a model is missing.
+
+Check:
+
+    C:\agroweather\ml\models
+
+Make sure these exist:
+
+    temperature_avg_model.pkl
+    temperature_min_model.pkl
+    temperature_max_model.pkl
+    rain_classifier.pkl
+    rainfall_amount_model.pkl
+    wind_speed_model.pkl
+    pressure_model.pkl
+
+
+Problem:
+    API starts but forecast fails.
+
+Check:
+
+    http://127.0.0.1:8000/health
+
+Then:
+
+    http://127.0.0.1:8000/docs
+
+Also inspect the Uvicorn terminal for the traceback.
+
+
+Problem:
+    Another device cannot access the API.
+
+Check:
+
+    1. Start with:
+       uvicorn api:app --host 0.0.0.0 --port 8000 --reload
+
+    2. Both devices are on the same network.
+
+    3. Use the PC's LAN IP instead of 127.0.0.1.
+
+    4. Check Windows Firewall.
+
+
+24. DAILY DEVELOPMENT WORKFLOW
+==============================
+
+1. Open PowerShell.
+
+2. Go to the backend:
+
+       cd C:\agroweather\ml
+
+3. Activate the environment:
+
+       C:\agroweather\.venv\Scripts\Activate.ps1
+
+4. Start the API:
+
+       uvicorn api:app --host 0.0.0.0 --port 8000 --reload
+
+5. Check health:
+
+       http://127.0.0.1:8000/health
+
+6. Open Swagger:
+
+       http://127.0.0.1:8000/docs
+
+7. Test current weather:
+
+       http://127.0.0.1:8000/
+
+8. Test forecast:
+
+       http://127.0.0.1:8000/forecast?days=7
+
+
+25. QUICK CHEAT SHEET
+=====================
+
+PROJECT:
+
+    C:\agroweather\ml
+
+ACTIVATE:
+
+    C:\agroweather\.venv\Scripts\Activate.ps1
+
+START:
+
+    uvicorn api:app --host 0.0.0.0 --port 8000 --reload
+
+BASE:
+
+    http://127.0.0.1:8000
+
+CURRENT WEATHER:
+
+    http://127.0.0.1:8000/
+
+HEALTH:
+
+    http://127.0.0.1:8000/health
+
+DEFAULT FORECAST:
+
+    http://127.0.0.1:8000/forecast
+
+7 DAYS:
+
+    http://127.0.0.1:8000/forecast?days=7
+
+CUSTOM:
+
+    http://127.0.0.1:8000/forecast/range?start_date=2025-11-01&end_date=2025-11-07
+
+SWAGGER:
+
+    http://127.0.0.1:8000/docs
+
+REDOC:
+
+    http://127.0.0.1:8000/redoc
+
+STOP:
+
+    CTRL + C
+
+
+26. FINAL API MAP
+=================
+
+                 AGROWEATHER BACKEND
+                         |
+        +----------------+----------------+
+        |                |                |
+        v                v                v
+       GET              GET              GET
+        /             /forecast        /health
+        |                |
+        |                +---- ?days=N
+        |
+        +---- current weather
+
+
+Forecast options:
+
+    /forecast
+        Standard forecast, default 5 days.
+
+    /forecast?days=N
+        Requested 1-30 day forecast.
+
+    /forecast/range
+        Custom start/end dates, maximum 30 days.
+
+
+Documentation:
+
+    /docs
+        Swagger UI.
+
+    /redoc
+        Alternative documentation.
+
+
+27. DEVELOPMENT RULES
+=====================
+
+1. Never invent current weather values when the station has no data.
+   Use null and let the frontend show a loading/offline state.
+
+2. Keep ML models loaded in memory.
+
+3. Keep normal forecast results cached.
+
+4. Use /forecast/range for custom date ranges.
+
+5. Do not expose the development server directly to the public
+   internet.
+
+6. Humidity and wind direction should remain live measurements until
+   enough historical data exists to train models for them.
+
+7. The current CSV-based forecast is a development-stage system.
+   The production system should use MongoDB and current station data.
+
+8. Forecast values are predictions, not guarantees.
+
+9. Keep this document as the backend API reference while building
+   the AgroWeather frontend.
+
+
+END OF AGROWEATHER BACKEND API REFERENCE

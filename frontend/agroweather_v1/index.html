@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AgroWeather</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <!-- Landing (public weather) -->
+  <div id="screen-landing" class="screen">
+    <header class="land-nav">
+      <div class="logo">
+        <div class="logo-icon"><i data-lucide="sprout"></i></div>
+        <span>AgroWeather</span>
+      </div>
+      <div class="land-actions">
+        <button class="btn-text" id="btnSignIn">Sign in</button>
+        <button class="btn-orange" id="btnStart">Get started</button>
+      </div>
+    </header>
+    <div class="land-hero">
+      <p class="land-label"><span class="pulse"></span> Kisii, Kenya</p>
+      <div class="land-temp-row">
+        <h1 id="landTemp">22°</h1>
+        <div class="land-temp-row-right">
+          <p class="land-cond" id="landCond">Partly cloudy</p>
+          <p class="land-loc">Kisii, Kenya</p>
+        </div>
+      </div>
+      <div class="land-chips" id="landChips"></div>
+    </div>
+    <div class="land-forecast">
+      <h3>Next 7 days</h3>
+      <div class="land-fc" id="landForecast"></div>
+    </div>
+    <div class="land-cta">
+      <h2>Weather built for your farm</h2>
+      <p>Monitor the station, plan crops, and get advice from the forecast.</p>
+      <button class="btn-orange lg" id="btnCta">Sign in to continue</button>
+    </div>
+  </div>
+
+  <!-- Login -->
+  <div id="screen-login" class="screen login-wrap" hidden>
+    <button class="back-link" id="btnBack"><i data-lucide="arrow-left"></i> Back</button>
+    <div class="login-box">
+      <div class="logo center">
+        <div class="logo-icon"><i data-lucide="sprout"></i></div>
+        <span>AgroWeather</span>
+      </div>
+      <h1>Welcome back</h1>
+      <p class="login-hint">Demo password: <strong>demo</strong></p>
+      <form id="loginForm">
+        <label>Email<input type="email" id="email" value="farmer@example.com" required></label>
+        <label>Password<input type="password" id="password" value="demo" required></label>
+        <button type="submit" class="btn-orange full">Sign in</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- App -->
+  <div id="screen-app" class="app" hidden>
+    <aside class="sidebar" id="sidebar">
+      <div class="logo side-logo">
+        <div class="logo-icon"><i data-lucide="sprout"></i></div>
+      </div>
+      <nav class="nav">
+        <button class="nav-btn active" data-page="home" title="Home"><i data-lucide="layout-grid"></i></button>
+        <button class="nav-btn" data-page="crops" title="Crops"><i data-lucide="leaf"></i></button>
+        <button class="nav-btn" data-page="plan" title="Plan"><i data-lucide="calendar"></i></button>
+        <button class="nav-btn" data-page="account" title="Account"><i data-lucide="settings"></i></button>
+      </nav>
+      <button class="nav-btn logout" id="btnLogout" title="Sign out"><i data-lucide="log-out"></i></button>
+    </aside>
+
+    <div class="main">
+      <header class="topbar">
+        <button class="menu-btn" id="menuBtn"><i data-lucide="menu"></i></button>
+        <div class="greet">
+          <img class="avatar" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='40'%3E%3Ccircle fill='%23FF8A3D' cx='20' cy='20' r='20'/%3E%3Ctext x='20' y='26' text-anchor='middle' fill='white' font-size='16' font-family='sans-serif' font-weight='600'%3EF%3C/text%3E%3C/svg%3E" alt="" id="avatarImg">
+          <div>
+            <p class="hello">Hello,</p>
+            <p class="name" id="userName">Farmer</p>
+          </div>
+        </div>
+        <div class="search-wrap">
+          <i data-lucide="search"></i>
+          <input type="search" placeholder="Search anything…" id="searchInput">
+        </div>
+        <button class="icon-round" id="themeBtn"><i data-lucide="sun" id="themeIcon"></i></button>
+        <button class="icon-round"><i data-lucide="bell"></i></button>
+      </header>
+
+      <div class="content" id="content"></div>
+    </div>
+  </div>
+
+  <div id="modal" class="modal" hidden>
+    <div class="modal-scrim" id="modalScrim"></div>
+    <div class="modal-panel">
+      <div class="modal-head">
+        <h2 id="modalTitle"></h2>
+        <button class="icon-round" id="modalClose"><i data-lucide="x"></i></button>
+      </div>
+      <div class="modal-body" id="modalBody"></div>
+      <div class="modal-foot" id="modalFoot"></div>
+    </div>
+  </div>
+
+  <div id="toasts" class="toasts"></div>
+
+  <script src="js/data.js"></script>
+  <script src="js/ui.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

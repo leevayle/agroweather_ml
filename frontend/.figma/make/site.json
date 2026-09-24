@@ -1,0 +1,10 @@
+{
+  "description": "Empowering farmers with real-time weather data, AI crop insights, and task management, this app enhances productivity and decision-making for smarter farming.",
+  "robots": {
+    "index": false
+  },
+  "accessibility": {
+    "addBypassLinks": false,
+    "ignoreReducedMotion": false
+  }
+}
