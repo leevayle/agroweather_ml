@@ -114,7 +114,7 @@ export default function Landing({ onGetStarted, onSignIn }: LandingProps) {
               Get Live weather data from your farm in 90 seconds
             </div>
             <h1 className="text-5xl md:text-6xl lg:text-7xl font-bold text-[var(--foreground)] leading-[1.05] tracking-tight mb-6">
-              Smarter farming starts with knowing{' '}
+              Smarter farming starts with learning{' '}
               <span className="text-[var(--primary)] relative">
                 weather
                 <svg className="absolute -bottom-2 left-0 w-full" viewBox="0 0 300 12" fill="none">
@@ -160,7 +160,7 @@ export default function Landing({ onGetStarted, onSignIn }: LandingProps) {
                 </div>
               </div>
               {/* Mock Dashboard */}
-              <div className="p-6 bg-[var(--grey)]">
+              <div className="p-6 bg-[var(--grey1)]">
                 <div className="flex items-center justify-between mb-5">
                   <div>
                     <p className="text-xs text-[var(--muted-foreground)] font-medium">Hi,</p>
@@ -172,7 +172,7 @@ export default function Landing({ onGetStarted, onSignIn }: LandingProps) {
                   </div>
                 </div>
                 <div className="grid grid-cols-3 gap-3 mb-4">
-                  <div className="bg-[var(--primary)] text-[var(--primary-foreground)] rounded-xl p-4 col-span-1">
+                  <div className="bg-[var(--sky)] text-[var(--primary-foreground)] rounded-xl p-4 col-span-1">
                     <p className="text-xs text-[var(--success-soft)] mb-1">Temperature</p>
                     <p className="text-3xl font-bold">24°</p>
                     <p className="text-xs text-[var(--success-soft)] mt-1">↑ 18° / ↓ 11°</p>
@@ -194,7 +194,7 @@ export default function Landing({ onGetStarted, onSignIn }: LandingProps) {
                       <span>🤖</span>
                     </div>
                     <div>
-                      <p className="text-xs font-semibold text-[var(--accent)] mb-1">AI Insight — Maize field E</p>
+                      <p className="text-xs font-semibold text-[var(--accent)] mb-1">Example AI Insight <span className="text-[var(--muted-foreground)]">|</span> Maize field E</p>
                       <p className="text-sm text-[var(--foreground)]">Ideal irrigation window: <strong>Tomorrow 6–9am</strong>. Rain expected Thursday reduces soil deficit to 12mm. Skip Friday irrigation entirely.</p>
                     </div>
                   </div>
@@ -206,24 +206,14 @@ export default function Landing({ onGetStarted, onSignIn }: LandingProps) {
         </div>
       </section>
 
-      {/* Trusted By */}
-      <section className="border-y border-[var(--border)] py-8 bg-[var(--background)]">
-        <div className="max-w-6xl mx-auto px-6">
-          <p className="text-center text-xs font-semibold text-[var(--muted-foreground)] uppercase tracking-widest mb-6">Trusted by farms in</p>
-          <div className="flex flex-wrap items-center justify-center gap-8 text-sm font-medium text-[var(--muted-foreground)]">
-            {['🇺🇸 United States', '🇧🇷 Brazil', '🇮🇳 India', '🇩🇪 Germany', '🇳🇬 Nigeria', '🇦🇺 Australia', '🇵🇹 Portugal'].map(c => (
-              <span key={c} className="whitespace-nowrap">{c}</span>
-            ))}
-          </div>
-        </div>
-      </section>
+    
 
       {/* Features */}
       <section id="features" className="py-24">
         <div className="max-w-6xl mx-auto px-6">
           <div className="max-w-xl mb-16">
-            <p className="text-xs font-semibold text-[var(--primary)] uppercase tracking-widest mb-3">Everything you need</p>
-            <h2 className="text-4xl font-bold text-[var(--foreground)] leading-tight">Built for the reality of farming</h2>
+            <p className="text-xs font-semibold text-[var(--foreground)] uppercase tracking-widest mb-3">Everything you need</p>
+            <h2 className="text-4xl font-bold text-[var(--primary)] leading-tight">Built for the reality of farming</h2>
             <p className="text-[var(--muted-foreground)] mt-4 text-lg">Not a generic weather app with a farm coat of paint. Purpose-built intelligence for people who grow food.</p>
           </div>
           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-5">

@@ -116,10 +116,10 @@ export default function Dashboard({ onNavigate, onAddStation, onShowNotification
               </div>
             ))}
           </div>
-          {/* Hourly scroll */}
-          <div className="flex gap-2 mt-4 overflow-x-auto hide-scrollbar -mx-1 px-1">
+          {/* Hourly forecast fills the weather card width. */}
+          <div className="grid grid-cols-7 gap-2 mt-4">
             {hourly.map((h, i) => (
-              <div key={i} className="flex flex-col items-center gap-1 flex-shrink-0 bg-[var(--background)]/10 rounded-xl px-3 py-2">
+              <div key={i} className="min-w-0 flex flex-col items-center gap-1 bg-[var(--background)]/10 rounded-xl px-1.5 py-2">
                 <span className="text-[var(--success-soft)] text-xs">{h.hour}</span>
                 <span className="text-base">{h.icon}</span>
                 <span className="text-[var(--primary-foreground)] text-sm font-semibold">{h.temp}°</span>
