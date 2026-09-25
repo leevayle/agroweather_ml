@@ -2,6 +2,7 @@ from datetime import date, datetime, timedelta
 from threading import Lock
 
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from forecast_engine import forecast, data
@@ -12,6 +13,15 @@ app = FastAPI(
     description="AgroWeather weather station and forecasting API",
     version="1.0.0"
 )
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 
 
 # ============================================================
