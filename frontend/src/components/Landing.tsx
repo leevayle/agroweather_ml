@@ -77,8 +77,8 @@ export default function Landing({ onGetStarted, onSignIn }: LandingProps) {
       <nav className="sticky top-0 z-50 bg-[var(--background)] border-b border-[var(--border)]">
         <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-[var(--primary)] flex items-center justify-center">
-              <span className="text-[var(--primary-foreground)] text-sm font-bold">🌿</span>
+            <div className="w-15 h-15 rounded-lg bg-[var(--background)] flex items-center justify-center">
+              <span className="text-[var(--background)] text-sm font-bold"><img src="/logo.webp" alt="AgroWeather Logo" className="w-full h-full object-contain" /></span>
             </div>
             <span className="font-semibold text-[var(--foreground)] text-lg">AgroWeather</span>
           </div>
@@ -323,12 +323,12 @@ export default function Landing({ onGetStarted, onSignIn }: LandingProps) {
       <footer className="border-t border-[var(--border)] py-10">
         <div className="max-w-6xl mx-auto px-6 flex flex-col md:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-2">
-            <div className="w-6 h-6 rounded-md bg-[var(--primary)] flex items-center justify-center">
-              <span className="text-[var(--primary-foreground)] text-xs">🌿</span>
+            <div className="w-15 h-15 rounded-lg bg-[var(--background)] flex items-center justify-center">
+              <span className="text-[var(--primary-foreground)] text-xs"><img src="/logo.webp" alt="AgroWeather Logo" className="w-full h-full object-contain" /></span>
             </div>
             <span className="font-semibold text-[var(--foreground)]">AgroWeather</span>
           </div>
-          <p className="text-xs text-[var(--muted-foreground)]">© 2026 AgroWeather Inc. Built for farmers, by farmers.</p>
+          <p className="text-xs text-[var(--muted-foreground)]">© 2026 AgroWeather. Built for farmers, by experts.</p>
           <div className="flex gap-6 text-xs text-[var(--muted-foreground)]">
             <a href="#" className="hover:text-[var(--primary)] transition-colors">Privacy</a>
             <a href="#" className="hover:text-[var(--primary)] transition-colors">Terms</a>

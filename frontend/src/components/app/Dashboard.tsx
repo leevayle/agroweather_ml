@@ -77,9 +77,9 @@ export default function Dashboard({ onNavigate, onAddStation, onShowNotification
       {/* Header */}
       <div className="flex items-start justify-between">
         <div>
-          <p className="text-sm text-[var(--muted-foreground)] font-medium">Good morning,</p>
-          <h1 className="text-2xl font-bold text-[var(--foreground)]">Marcus 👋</h1>
-          <p className="text-xs text-[var(--muted-foreground)] mt-0.5">Tuesday, September 22 · Ames, Iowa</p>
+          <p className="text-sm text-[var(--muted-foreground)] font-medium">Hi,</p>
+          <h1 className="text-2xl font-bold text-[var(--foreground)]">Makori 👋</h1>
+          <p className="text-xs text-[var(--muted-foreground)] mt-0.5">Tuesday, September 22 · Kisii, Kenya</p>
         </div>
         
       </div>

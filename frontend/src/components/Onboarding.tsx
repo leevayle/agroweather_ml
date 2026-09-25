@@ -41,8 +41,8 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
       <div className="border-b border-[var(--border)] bg-[var(--background)]/80 backdrop-blur-sm">
         <div className="max-w-6xl w-full mx-auto flex items-center justify-between px-6 py-4">
           <div className="flex items-center gap-2">
-            <div className="w-7 h-7 rounded-md bg-[var(--primary)] flex items-center justify-center">
-              <span className="text-[var(--primary-foreground)] text-xs">🌿</span>
+            <div className="w-15 h-15 rounded-lg bg-[var(--background)] flex items-center justify-center">
+              <span className="text-[var(--primary-foreground)] text-xs"><img src="/logo.webp" alt="AgroWeather Logo" className="w-full h-full object-contain" /></span>
             </div>
             <span className="font-semibold text-[var(--foreground)]">AgroWeather</span>
           </div>
@@ -71,8 +71,8 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
           {/* Step 0: Welcome */}
           {step === 0 && (
             <div className="text-center">
-              <div className="w-20 h-20 rounded-3xl bg-[var(--primary)] flex items-center justify-center text-4xl mx-auto mb-8 shadow-lg shadow-[var(--primary)]/20">
-                🌾
+              <div className="w-40 h-40  flex items-center justify-center text-4xl mx-auto mb-10  shadow-[var(--grey1)]/20">
+                <img src="/logo.webp" alt="AgroWeather Logo" className="w-30 h-30 object-contain" />
               </div>
               <h1 className="text-3xl font-bold text-[var(--foreground)] mb-3">Welcome to AgroWeather</h1>
               <p className="text-[var(--muted-foreground)] mb-10 text-base leading-relaxed">

@@ -65,24 +65,13 @@ export default function Sidebar({ active, onChange }: SidebarProps) {
     <aside className="hidden md:flex flex-col w-60 min-h-screen bg-[var(--background)] border-r border-[var(--border)] fixed left-0 top-0 bottom-0 z-40">
       {/* Logo */}
       <div className="flex items-center gap-2.5 px-5 py-5 border-b border-[var(--border)]">
-        <div className="w-8 h-8 rounded-lg bg-[var(--primary)] flex items-center justify-center">
-          <span className="text-[var(--primary-foreground)] text-sm">🌿</span>
+        <div className="w-15 h-15 rounded-lg bg-[var(--background)] flex items-center justify-center">
+          <img src="/logo.webp" alt="AgroWeather Logo" className="w-full h-full object-contain" />
         </div>
         <span className="font-bold text-[var(--foreground)] text-base">AgroWeather</span>
       </div>
 
-      {/* Farm info */}
-      <div className="px-5 py-4 border-b border-[var(--border)]">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-full bg-[var(--primary)] flex items-center justify-center text-[var(--primary-foreground)] text-sm font-semibold flex-shrink-0">
-            MT
-          </div>
-          <div className="min-w-0">
-            <p className="text-sm font-semibold text-[var(--foreground)] truncate">Thielmann Farm</p>
-            <p className="text-xs text-[var(--muted-foreground)]">Ames, Iowa</p>
-          </div>
-        </div>
-      </div>
+      
 
       {/* Nav items */}
       <nav className="flex-1 py-3 px-3">
