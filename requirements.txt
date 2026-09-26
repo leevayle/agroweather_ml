@@ -1,0 +1,10 @@
+fastapi
+uvicorn[standard]
+pymongo
+certifi
+python-dotenv
+paho-mqtt
+joblib
+pandas
+numpy
+scikit-learn

@@ -1,158 +1,205 @@
-from mongodb import (
-    client,
-    db,
-    users_collection,
-    stations_collection,
-    weather_collection,
-    forecasts_collection,
-    crops_collection,
-    user_crops_collection,
+from pymongo import ASCENDING, DESCENDING
+
+from server.database.mongodb import (
     calendar_collection,
+    crops_collection,
+    forecasts_collection,
     notifications_collection,
+    stations_collection,
+    user_crops_collection,
+    users_collection,
+    weather_collection,
 )
 
 
+# ============================================================
+# HELPER
+# ============================================================
+
+def create_index_if_missing(
+    collection,
+    keys,
+    name,
+    unique=False,
+):
+    """
+    Create an index only if an equivalent index does not
+    already exist.
+
+    This makes database initialization safe to run multiple
+    times.
+    """
+
+    existing_indexes = list(collection.list_indexes())
+
+    for index in existing_indexes:
+        existing_keys = list(index["key"].items())
+
+        if existing_keys == keys:
+            existing_name = index["name"]
+
+            print(
+                f"Index already exists on "
+                f"{collection.name}: "
+                f"{existing_name}"
+            )
+
+            return existing_name
+
+    collection.create_index(
+        keys,
+        unique=unique,
+        name=name,
+    )
+
+    print(
+        f"Created index on "
+        f"{collection.name}: {name}"
+    )
+
+    return name
+
+
+# ============================================================
+# INDEX CREATION
+# ============================================================
+
 def create_indexes():
 
-    print("Creating indexes...")
+    print("Creating MongoDB indexes...")
 
 
-    # -------------------------
+    # --------------------------------------------------------
     # USERS
-    # -------------------------
+    # --------------------------------------------------------
 
-    users_collection.create_index(
-        "email",
+    create_index_if_missing(
+        users_collection,
+        [("email", ASCENDING)],
+        "unique_user_email",
         unique=True,
-        name="unique_user_email",
     )
 
 
-    # -------------------------
+    # --------------------------------------------------------
     # STATIONS
-    # -------------------------
+    # --------------------------------------------------------
 
-    stations_collection.create_index(
-        "station_id",
+    create_index_if_missing(
+        stations_collection,
+        [("station_id", ASCENDING)],
+        "unique_station_id",
         unique=True,
-        name="unique_station_id",
     )
 
 
-    # -------------------------
-    # WEATHER
-    # -------------------------
+    # --------------------------------------------------------
+    # WEATHER READINGS
+    # --------------------------------------------------------
 
-    weather_collection.create_index(
+    create_index_if_missing(
+        weather_collection,
         [
-            ("station_id", 1),
-            ("timestamp", -1),
+            ("station_id", ASCENDING),
+            ("timestamp", DESCENDING),
         ],
-        name="station_weather_time",
+        "station_timestamp_desc",
     )
 
 
-    # -------------------------
+    # --------------------------------------------------------
     # FORECASTS
-    # -------------------------
+    # --------------------------------------------------------
 
-    forecasts_collection.create_index(
+    create_index_if_missing(
+        forecasts_collection,
         [
-            ("station_id", 1),
-            ("forecast_date", 1),
+            ("station_id", ASCENDING),
+            ("forecast_date", ASCENDING),
         ],
-        name="station_forecast_date",
+        "station_forecast_date",
+    )
+
+    create_index_if_missing(
+        forecasts_collection,
+        [
+            ("station_id", ASCENDING),
+            ("generated_at", DESCENDING),
+        ],
+        "station_generated_at_desc",
     )
 
 
-    forecasts_collection.create_index(
-        "generated_at",
-        name="forecast_generated_at",
-    )
-
-
-    # -------------------------
+    # --------------------------------------------------------
     # CROPS
-    # -------------------------
+    # --------------------------------------------------------
 
-    crops_collection.create_index(
-        "name",
+    create_index_if_missing(
+        crops_collection,
+        [("name", ASCENDING)],
+        "unique_crop_name",
         unique=True,
-        name="unique_crop_name",
     )
 
 
-    # -------------------------
+    # --------------------------------------------------------
     # USER CROPS
-    # -------------------------
+    # --------------------------------------------------------
 
-    user_crops_collection.create_index(
+    create_index_if_missing(
+        user_crops_collection,
         [
-            ("user_id", 1),
-            ("status", 1),
+            ("user_id", ASCENDING),
+            ("status", ASCENDING),
         ],
-        name="user_crop_status",
+        "user_status",
     )
 
 
-    # -------------------------
-    # CALENDAR
-    # -------------------------
+    # --------------------------------------------------------
+    # CALENDAR TASKS
+    # --------------------------------------------------------
 
-    calendar_collection.create_index(
+    create_index_if_missing(
+        calendar_collection,
         [
-            ("user_id", 1),
-            ("date", 1),
+            ("user_id", ASCENDING),
+            ("date", ASCENDING),
         ],
-        name="user_calendar_date",
+        "user_calendar_date",
     )
 
 
-    # -------------------------
+    # --------------------------------------------------------
     # NOTIFICATIONS
-    # -------------------------
+    # --------------------------------------------------------
 
-    notifications_collection.create_index(
+    create_index_if_missing(
+        notifications_collection,
         [
-            ("user_id", 1),
-            ("created_at", -1),
+            ("user_id", ASCENDING),
+            ("created_at", DESCENDING),
         ],
-        name="user_notifications",
+        "user_notifications_date",
+    )
+
+    create_index_if_missing(
+        notifications_collection,
+        [
+            ("user_id", ASCENDING),
+            ("read", ASCENDING),
+        ],
+        "user_notifications_read",
     )
 
 
-    notifications_collection.create_index(
-        [
-            ("user_id", 1),
-            ("read", 1),
-        ],
-        name="user_notification_read",
-    )
+    print()
+    print("MongoDB indexes are ready.")
 
 
-def main():
-
-    try:
-
-        client.admin.command("ping")
-
-        print("MongoDB connection OK.")
-
-        create_indexes()
-
-        print("Indexes created successfully.")
-        print()
-        print("Database:", db.name)
-
-    except Exception as error:
-
-        print("Database initialization failed.")
-        print(error)
-
-    finally:
-
-        client.close()
-
+# ============================================================
+# MAIN
+# ============================================================
 
 if __name__ == "__main__":
-    main()
+    create_indexes()
