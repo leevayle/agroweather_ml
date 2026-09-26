@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 
 const hourlyData = [
   { hour: 'Now', temp: 24, precip: 0, icon: '🌤️', wind: 12 },
@@ -13,15 +13,37 @@ const hourlyData = [
   { hour: '6am', temp: 13, precip: 0, icon: '🌤️', wind: 6 },
 ]
 
-const forecast = [
-  { day: 'Today', high: 26, low: 11, icon: '🌤️', precip: 10, desc: 'Mostly sunny' },
-  { day: 'Wed', high: 22, low: 14, icon: '🌧️', precip: 80, desc: 'Heavy rain' },
-  { day: 'Thu', high: 19, low: 12, icon: '🌦️', precip: 60, desc: 'Showers' },
-  { day: 'Fri', high: 24, low: 10, icon: '🌤️', precip: 5, desc: 'Mostly clear' },
-  { day: 'Sat', high: 28, low: 12, icon: '☀️', precip: 0, desc: 'Sunny' },
-  { day: 'Sun', high: 27, low: 13, icon: '☀️', precip: 0, desc: 'Sunny' },
-  { day: 'Mon', high: 21, low: 11, icon: '⛅', precip: 20, desc: 'Partly cloudy' },
-]
+interface ForecastDay {
+  date: string
+  temperature?: {
+    min_c: number | null
+    max_c: number | null
+  }
+  rainfall?: {
+    probability: number | null
+  }
+  wind_speed: number | null
+}
+
+const FORECAST_API_URL = import.meta.env.VITE_FORECAST_API_URL ?? 'http://127.0.0.1:8001'
+
+function valueOrPlaceholder(value: number | null | undefined, suffix = '') {
+  return value == null ? '--' : `${value}${suffix}`
+}
+
+function forecastIcon(probability: number | null | undefined) {
+  if (probability == null) return '--'
+  if (probability >= 0.6) return '🌧️'
+  if (probability >= 0.3) return '🌦️'
+  return '☀️'
+}
+
+function forecastDescription(probability: number | null | undefined) {
+  if (probability == null) return '--'
+  if (probability >= 0.6) return 'Rain likely'
+  if (probability >= 0.3) return 'Possible showers'
+  return 'Mostly clear'
+}
 
 const stationDetails = [
   { name: 'Field A — North', temp: 24, humidity: 68, wind: 12, uv: 6, pressure: 1013, soil: 62, dew: 16 },
@@ -43,7 +65,31 @@ function MiniBarChart({ value, max = 100, color }: { value: number; max?: number
 
 export default function Weather() {
   const [activeStation, setActiveStation] = useState(0)
+  const [forecast, setForecast] = useState<ForecastDay[]>([])
   const station = stationDetails[activeStation]
+
+  useEffect(() => {
+    let isCurrent = true
+
+    const loadForecast = async () => {
+      try {
+        const response = await fetch(`${FORECAST_API_URL}/forecast?days=7`)
+        if (!response.ok) throw new Error('Forecast request failed')
+        const result = await response.json()
+        if (isCurrent) setForecast(Array.isArray(result.forecast) ? result.forecast : [])
+      } catch {
+        if (isCurrent) setForecast([])
+      }
+    }
+
+    loadForecast()
+    const refresh = window.setInterval(loadForecast, 30000)
+
+    return () => {
+      isCurrent = false
+      window.clearInterval(refresh)
+    }
+  }, [])
 
   const temps = hourlyData.map(h => h.temp)
   const minTemp = Math.min(...temps)
@@ -151,34 +197,34 @@ export default function Weather() {
       <div className="bg-[var(--background)] border border-[var(--border)] rounded-2xl p-4">
         <h2 className="text-sm font-semibold text-[var(--foreground)] mb-3">7-Day Forecast</h2>
         <div className="space-y-0.5">
-          {forecast.map((day, i) => (
+          {(forecast.length ? forecast : Array.from({ length: 7 }, () => null)).map((day, i) => (
             <div key={i} className={`flex items-center gap-3 py-2.5 px-2 rounded-xl ${i === 0 ? 'bg-[var(--grey)]' : 'hover:bg-[var(--grey)] transition-colors'}`}>
-              <span className="text-sm font-medium text-[var(--muted-foreground)] w-10 flex-shrink-0">{day.day}</span>
-              <span className="text-xl w-8 flex-shrink-0">{day.icon}</span>
-              <span className="text-xs text-[var(--muted-foreground)] flex-1">{day.desc}</span>
+              <span className="text-sm font-medium text-[var(--muted-foreground)] w-10 flex-shrink-0">{day ? new Date(`${day.date}T12:00:00`).toLocaleDateString('en-US', { weekday: 'short' }) : '--'}</span>
+              <span className="text-xl w-8 flex-shrink-0">{day ? forecastIcon(day.rainfall?.probability) : '--'}</span>
+              <span className="text-xs text-[var(--muted-foreground)] flex-1">{day ? forecastDescription(day.rainfall?.probability) : '--'}</span>
               <div className="flex items-center gap-1 w-10 flex-shrink-0">
-                {day.precip > 0 && (
+                {day?.rainfall?.probability != null && (
                   <>
                     <svg width="10" height="10" viewBox="0 0 10 10" fill="var(--sky)">
                       <path d="M5 1L7.5 5.5C7.5 7.5 5 9 5 9S2.5 7.5 2.5 5.5L5 1z"/>
                     </svg>
-                    <span className="text-xs text-[var(--sky)]">{day.precip}%</span>
+                    <span className="text-xs text-[var(--sky)]">{Math.round(day.rainfall.probability * 100)}%</span>
                   </>
                 )}
               </div>
               <div className="flex items-center gap-2 flex-shrink-0">
-                <span className="text-sm font-semibold text-[var(--foreground)]">{day.high}°</span>
+                <span className="text-sm font-semibold text-[var(--foreground)]">{valueOrPlaceholder(day?.temperature?.max_c, '°')}</span>
                 <div className="w-16 h-1.5 bg-[var(--muted)] rounded-full overflow-hidden">
                   <div
                     className="h-full rounded-full"
                     style={{
                       background: 'linear-gradient(to right, var(--sky), var(--accent))',
-                      width: `${((day.high - 10) / 20) * 100}%`,
-                      marginLeft: `${((day.low - 10) / 20) * 100}%`,
+                      width: day?.temperature?.max_c == null || day?.temperature?.min_c == null ? '0%' : `${Math.max(0, Math.min(100, ((day.temperature.max_c - 10) / 20) * 100))}%`,
+                      marginLeft: day?.temperature?.min_c == null ? '0%' : `${Math.max(0, Math.min(100, ((day.temperature.min_c - 10) / 20) * 100))}%`,
                     }}
                   />
                 </div>
-                <span className="text-sm text-[var(--muted-foreground)]">{day.low}°</span>
+                <span className="text-sm text-[var(--muted-foreground)]">{valueOrPlaceholder(day?.temperature?.min_c, '°')}</span>
               </div>
             </div>
           ))}

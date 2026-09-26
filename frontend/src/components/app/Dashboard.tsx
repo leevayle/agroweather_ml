@@ -1,9 +1,42 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 
 interface DashboardProps {
   onNavigate: (tab: string) => void
   onAddStation: () => void
   onShowNotifications: () => void
+}
+
+interface CurrentWeather {
+  temperature_c: number | null
+  humidity_percent: number | null
+  wind_speed_kmh: number | null
+  rainfall_mm: number | null
+  rain_status: string | null
+  wind_direction: string | null
+  pressure_hpa: number | null
+}
+
+interface ForecastDay {
+  date: string
+  temperature?: {
+    avg_c: number | null
+    min_c: number | null
+    max_c: number | null
+  }
+  rainfall?: {
+    probability: number | null
+  }
+}
+
+const API_URL = import.meta.env.VITE_API_URL ?? 'http://127.0.0.1:8000'
+const FORECAST_API_URL = import.meta.env.VITE_FORECAST_API_URL ?? 'http://127.0.0.1:8001'
+
+function weatherValue(value: number | null | undefined, suffix = '') {
+  return value == null ? '--' : `${value}${suffix}`
+}
+
+function forecastLabel(date: string) {
+  return new Date(`${date}T12:00:00`).toLocaleDateString('en-US', { weekday: 'short' })
 }
 
 const stations = [
@@ -46,18 +79,42 @@ const tasks = [
   { title: 'Harvest window — Soybeans', time: 'Sep 26', done: false, ai: true },
 ]
 
-const hourly = [
-  { hour: 'Now', temp: 24, icon: '☀️' },
-  { hour: '3pm', temp: 26, icon: '🌤️' },
-  { hour: '6pm', temp: 22, icon: '⛅' },
-  { hour: '9pm', temp: 17, icon: '🌙' },
-  { hour: '12am', temp: 14, icon: '🌙' },
-  { hour: '3am', temp: 12, icon: '🌙' },
-  { hour: '6am', temp: 13, icon: '🌤️' },
-]
-
 export default function Dashboard({ onNavigate, onAddStation, onShowNotifications }: DashboardProps) {
   const [addedInsight, setAddedInsight] = useState<number | null>(null)
+  const [weather, setWeather] = useState<CurrentWeather | null>(null)
+  const [forecast, setForecast] = useState<ForecastDay[]>([])
+
+  useEffect(() => {
+    let isCurrent = true
+
+    const loadWeather = async () => {
+      try {
+        const response = await fetch(`${API_URL}/weather/current`)
+        if (!response.ok) throw new Error('Weather request failed')
+        const result = await response.json()
+        if (isCurrent) setWeather(result.weather ?? null)
+      } catch {
+        if (isCurrent) setWeather(null)
+      }
+
+      try {
+        const response = await fetch(`${FORECAST_API_URL}/forecast?days=7`)
+        if (!response.ok) throw new Error('Forecast request failed')
+        const result = await response.json()
+        if (isCurrent) setForecast(Array.isArray(result.forecast) ? result.forecast : [])
+      } catch {
+        if (isCurrent) setForecast([])
+      }
+    }
+
+    loadWeather()
+    const refresh = window.setInterval(loadWeather, 30000)
+
+    return () => {
+      isCurrent = false
+      window.clearInterval(refresh)
+    }
+  }, [])
 
   const priorityStyle = (p: string) => {
     if (p === 'high') return { bg: 'bg-[var(--warning)]', text: 'text-[var(--accent)]', label: 'Action today' }
@@ -96,19 +153,19 @@ export default function Dashboard({ onNavigate, onAddStation, onShowNotification
             <div>
               <p className="text-[var(--success-soft)] text-xs font-medium mb-1">Live · Field A Station</p>
               <div className="flex items-baseline gap-2">
-                <span className="text-5xl font-bold text-[var(--primary-foreground)]">24°C</span>
-                <span className="text-[var(--success-soft)] text-sm">Feels 22°</span>
+                <span className="text-5xl font-bold text-[var(--primary-foreground)]">{weatherValue(weather?.temperature_c, '°C')}</span>
+                <span className="text-[var(--success-soft)] text-sm">Feels --</span>
               </div>
-              <p className="text-[var(--primary-foreground)] font-medium mt-1">Partly cloudy</p>
+              <p className="text-[var(--primary-foreground)] font-medium mt-1">{weather?.rain_status ?? '--'}</p>
             </div>
             <div className="text-5xl">🌤️</div>
           </div>
           <div className="flex gap-4 mt-4 pt-4 border-t border-[var(--background)]/20">
             {[
-              { icon: '💧', label: 'Humidity', val: '68%' },
-              { icon: '💨', label: 'Wind', val: '12 km/h' },
-              { icon: '🌡️', label: 'High/Low', val: '26° / 11°' },
-              { icon: '🌧️', label: 'Rain', val: '0%' },
+              { icon: '💧', label: 'Humidity', val: weatherValue(weather?.humidity_percent, '%') },
+              { icon: '💨', label: 'Wind', val: weatherValue(weather?.wind_speed_kmh, ' km/h') },
+              { icon: '🌡️', label: 'High/Low', val: forecast.length ? `${weatherValue(forecast[0].temperature?.max_c, '°')} / ${weatherValue(forecast[0].temperature?.min_c, '°')}` : '--' },
+              { icon: '🌧️', label: 'Rain', val: weatherValue(weather?.rainfall_mm, ' mm') },
             ].map(m => (
               <div key={m.label} className="flex-1 min-w-0">
                 <p className="text-[var(--success-soft)] text-xs">{m.label}</p>
@@ -118,11 +175,11 @@ export default function Dashboard({ onNavigate, onAddStation, onShowNotification
           </div>
           {/* Hourly forecast fills the weather card width. */}
           <div className="grid grid-cols-7 gap-2 mt-4">
-            {hourly.map((h, i) => (
-              <div key={i} className="min-w-0 flex flex-col items-center gap-1 bg-[var(--background)]/10 rounded-xl px-1.5 py-2">
-                <span className="text-[var(--success-soft)] text-xs">{h.hour}</span>
-                <span className="text-base">{h.icon}</span>
-                <span className="text-[var(--primary-foreground)] text-sm font-semibold">{h.temp}°</span>
+            {(forecast.length ? forecast : Array.from({ length: 7 }, () => null)).map((day, i) => (
+                <div key={day?.date ?? i} className="min-w-0 flex flex-col items-center gap-1 bg-[var(--background)]/10 rounded-xl px-1.5 py-2">
+                  <span className="text-[var(--success-soft)] text-xs">{day ? forecastLabel(day.date) : '--'}</span>
+                  <span className="text-base">{day ? '🌤️' : '--'}</span>
+                  <span className="text-[var(--primary-foreground)] text-sm font-semibold">{weatherValue(day?.temperature?.avg_c, '°')}</span>
               </div>
             ))}
           </div>
