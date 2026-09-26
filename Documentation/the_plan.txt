@@ -1,0 +1,74 @@
+                         ┌───────────────────┐
+                         │      GITHUB       │
+                         │                   │
+                         │ frontend/         │
+                         │ server/           │
+                         │ ml/               │
+                         │ Documentation/    │
+                         └─────────┬─────────┘
+                                   │
+                  ┌────────────────┴───────────────┐
+                  │                                │
+                  ▼                                ▼
+           ┌─────────────┐                  ┌──────────────┐
+           │   VERCEL    │                  │ CLOUD SERVER │
+           │             │                  │              │
+           │    React    │──────HTTPS──────►│   FastAPI    │
+           │  Frontend   │                  │              │
+           └─────────────┘                  │      ML      │
+                                            └──────┬───────┘
+                                                   │
+                                  ┌────────────────┼───────────────┐
+                                  │                │               │
+                                  ▼                ▼               ▼
+                            ┌──────────┐    ┌────────────┐   ┌─────────┐
+                            │  MQTT    │    │  MongoDB   │   │  ML     │
+                            │  Broker  │    │   Atlas     │   │ Models  │
+                            └────┬─────┘    └────────────┘   └─────────┘
+                                 ▲
+                                 │
+                              MQTT/TLS
+                                 │
+                            ┌────┴────┐
+                            │  ESP32  │
+                            └─────────┘
+
+
+
+
+            - Push from one codebase
+                ---agroweather
+                   --Frontend
+                     - React app
+                   --Server
+                     - Python server
+                     - ML
+                      - Models
+                   --Documentation
+
+
+
+
+
+
+
+    MONGO DB DATABASE Planned
+
+
+    agroweather
+    │
+    ├── users
+    │
+    ├── stations
+    │
+    ├── weather_readings
+    │
+    ├── forecasts
+    │
+    ├── crops
+    │
+    ├── user_crops
+    │
+    ├── calendar_tasks
+    │
+    └── notifications
