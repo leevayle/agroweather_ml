@@ -10,6 +10,14 @@ from server.config import (
 
 from server.database.mongodb import test_connection
 
+from server.api.weather import (
+    router as weather_router,
+)
+
+from server.api.forecast import (
+    router as forecast_router,
+)
+
 
 # ============================================================
 # FASTAPI APPLICATION
@@ -39,11 +47,25 @@ app.add_middleware(
 
 
 # ============================================================
+# ROUTERS
+# ============================================================
+
+app.include_router(
+    weather_router
+)
+
+app.include_router(
+    forecast_router
+)
+
+
+# ============================================================
 # ROOT
 # ============================================================
 
 @app.get("/")
 def root():
+
     return {
         "application": "AgroWeather",
         "status": "online",
@@ -58,16 +80,26 @@ def root():
 
 @app.get("/health")
 def health():
+
     mongo_status = "offline"
 
     try:
+
         test_connection()
+
         mongo_status = "online"
+
     except Exception:
+
         mongo_status = "offline"
+
 
     return {
         "api": "online",
         "mongodb": mongo_status,
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": (
+            datetime.now(
+                timezone.utc
+            ).isoformat()
+        ),
     }
