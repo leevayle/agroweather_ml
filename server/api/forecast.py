@@ -1,10 +1,9 @@
-from datetime import timedelta
+from datetime import date
 
 from fastapi import APIRouter, HTTPException, Query
 
-from server.services.forecast_cache import (
+from server.services.forecast_service import (
     get_cache_status,
-    get_cached_forecast,
     get_forecast,
 )
 
@@ -20,7 +19,7 @@ router = APIRouter(
 # ============================================================
 
 @router.get("")
-def get_forecast_api(
+def forecast_default(
     days: int = Query(
         7,
         ge=1,
@@ -30,89 +29,36 @@ def get_forecast_api(
 
     status = get_cache_status()
 
-
-    if (
-        status["ready"]
-        and status["start_date"]
-        and status["end_date"]
-    ):
-
-        start_date = status[
-            "start_date"
-        ]
-
-        cached_end = status[
-            "end_date"
-        ]
-
-
-        # ----------------------------------------------------
-        # Limit default request to available cache
-        # ----------------------------------------------------
-
-        requested_end = (
-            __import__(
-                "datetime"
-            ).date.fromisoformat(
-                start_date
-            )
-            + timedelta(
-                days=days - 1
-            )
+    if not status["ready"]:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Forecast cache is not ready. "
+                "Check backend startup logs."
+            ),
         )
 
-
-        cached_end_date = (
-            __import__(
-                "datetime"
-            ).date.fromisoformat(
-                cached_end
-            )
-        )
-
-
-        if requested_end > cached_end_date:
-
-            requested_end = (
-                cached_end_date
-            )
-
-
-        end_date = requested_end.isoformat()
-
-
-        return {
-            "source": "memory_cache",
-
-            "start_date": start_date,
-
-            "end_date": end_date,
-
-            "count": len(
-                get_cached_forecast(
-                    start_date,
-                    end_date,
-                )
-            ),
-
-            "forecast": get_cached_forecast(
-                start_date,
-                end_date,
-            ),
-        }
-
-
-    # --------------------------------------------------------
-    # Cache isn't ready
-    # --------------------------------------------------------
-
-    raise HTTPException(
-        status_code=503,
-        detail=(
-            "Forecast cache is not ready yet. "
-            "Please try again shortly."
-        ),
+    cache_start = date.fromisoformat(
+        status["start_date"]
     )
+
+    requested_end = cache_start.fromordinal(
+        cache_start.toordinal() + days - 1
+    )
+
+    try:
+
+        return get_forecast(
+            cache_start,
+            requested_end,
+        )
+
+    except Exception as exc:
+
+        raise HTTPException(
+            status_code=500,
+            detail=f"Forecast generation failed: {exc}",
+        ) from exc
 
 
 # ============================================================
@@ -120,35 +66,59 @@ def get_forecast_api(
 # ============================================================
 
 @router.get("/range")
-def get_forecast_range(
+def forecast_range(
     start_date: str,
     end_date: str,
 ):
 
     try:
 
-        return get_forecast(
-            start_date,
-            end_date,
+        start = date.fromisoformat(
+            start_date
         )
 
+        end = date.fromisoformat(
+            end_date
+        )
 
-    except Exception as exc:
+    except ValueError as exc:
 
         raise HTTPException(
             status_code=400,
             detail=(
-                "Forecast generation failed: "
-                f"{exc}"
+                "Dates must use YYYY-MM-DD format."
+            ),
+        ) from exc
+
+    if end < start:
+
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "end_date cannot be before start_date."
             ),
         )
+
+    try:
+
+        return get_forecast(
+            start,
+            end,
+        )
+
+    except Exception as exc:
+
+        raise HTTPException(
+            status_code=500,
+            detail=f"Forecast generation failed: {exc}",
+        ) from exc
 
 
 # ============================================================
 # CACHE STATUS
 # ============================================================
 
-@router.get("/cache/status")
-def forecast_cache_status():
+@router.get("/status")
+def forecast_status():
 
     return get_cache_status()
