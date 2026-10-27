@@ -1,4 +1,13 @@
 import { useEffect, useState } from 'react'
+import {
+  fetchCurrentWeather,
+  fetchForecast,
+  displayValue,
+  weekdayLabel,
+  rainIcon,
+  type CurrentWeatherData,
+  type ForecastDay,
+} from '../../lib/api'
 
 interface DashboardProps {
   onNavigate: (tab: string) => void
@@ -6,43 +15,11 @@ interface DashboardProps {
   onShowNotifications: () => void
 }
 
-interface CurrentWeather {
-  temperature_c: number | null
-  humidity_percent: number | null
-  wind_speed_kmh: number | null
-  rainfall_mm: number | null
-  rain_status: string | null
-  wind_direction: string | null
-  pressure_hpa: number | null
-}
-
-interface ForecastDay {
-  date: string
-  temperature?: {
-    avg_c: number | null
-    min_c: number | null
-    max_c: number | null
-  }
-  rainfall?: {
-    probability: number | null
-  }
-}
-
-const API_URL = import.meta.env.VITE_API_URL ?? 'http://127.0.0.1:8000'
-const FORECAST_API_URL = import.meta.env.VITE_FORECAST_API_URL ?? 'http://127.0.0.1:8001'
-
-function weatherValue(value: number | null | undefined, suffix = '') {
-  return value == null ? '--' : `${value}${suffix}`
-}
-
-function forecastLabel(date: string) {
-  return new Date(`${date}T12:00:00`).toLocaleDateString('en-US', { weekday: 'short' })
-}
-
+// Placeholder station cards until multi-station API exists
 const stations = [
-  { name: 'Field A — North', temp: 24, humidity: 68, wind: 12, status: 'live', signal: 92 },
-  { name: 'Field B — Corn', temp: 23, humidity: 71, wind: 9, status: 'live', signal: 87 },
-  { name: 'Greenhouse', temp: 28, humidity: 84, wind: 0, status: 'live', signal: 99 },
+  { name: 'Station 01', status: 'live', signal: 92 },
+  { name: 'Field B (demo)', status: 'demo', signal: 87 },
+  { name: 'Greenhouse (demo)', status: 'demo', signal: 99 },
 ]
 
 const insights = [
@@ -50,23 +27,23 @@ const insights = [
     type: 'irrigation',
     crop: 'Corn — Field B',
     title: 'Skip Thursday irrigation',
-    body: '14mm of rain expected Thursday 2–5pm. Soil moisture at 68% — irrigation would cause oversaturation. Resume Friday evening.',
+    body: 'Rain expected in the next days according to the ML forecast. Soil moisture is healthy — irrigation would cause oversaturation. Resume after dry spell.',
     priority: 'high',
-    saved: '$340 est.',
+    saved: 'Water savings',
   },
   {
     type: 'harvest',
     crop: 'Soybeans — Field A',
-    title: 'Harvest window opens in 4 days',
-    body: 'Moisture content projected at 13.2% by Sept 26. Dry conditions forecast through Sept 29. Ideal 3-day combine window.',
+    title: 'Watch harvest window',
+    body: 'Dry conditions in the forecast create a favourable combine window. Monitor moisture and plan accordingly.',
     priority: 'medium',
     saved: null,
   },
   {
     type: 'frost',
     crop: 'All fields',
-    title: 'Light frost possible Oct 3',
-    body: 'Temperatures may dip to -1°C on the night of Oct 3–4. Consider frost cloth for tomato beds and any late-season seedlings.',
+    title: 'Monitor low temperatures',
+    body: 'Check the 7-day forecast for nights that dip near freezing and protect sensitive crops if needed.',
     priority: 'warning',
     saved: null,
   },
@@ -75,41 +52,58 @@ const insights = [
 const tasks = [
   { title: 'Apply fertilizer — Field A', time: 'Today', done: false, ai: false },
   { title: 'Check irrigation lines — South pivot', time: 'Tomorrow', done: false, ai: false },
-  { title: 'Soil sample — Greenhouse beds', time: 'Sep 25', done: true, ai: false },
-  { title: 'Harvest window — Soybeans', time: 'Sep 26', done: false, ai: true },
+  { title: 'Soil sample — Greenhouse beds', time: 'Later', done: true, ai: false },
+  { title: 'Harvest window — Soybeans', time: 'This week', done: false, ai: true },
 ]
 
 export default function Dashboard({ onNavigate, onAddStation, onShowNotifications }: DashboardProps) {
   const [addedInsight, setAddedInsight] = useState<number | null>(null)
-  const [weather, setWeather] = useState<CurrentWeather | null>(null)
+  const [weather, setWeather] = useState<CurrentWeatherData | null>(null)
+  const [weatherStatus, setWeatherStatus] = useState<string>('loading')
+  const [timestamp, setTimestamp] = useState<string | null>(null)
   const [forecast, setForecast] = useState<ForecastDay[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     let isCurrent = true
 
-    const loadWeather = async () => {
+    const load = async () => {
       try {
-        const response = await fetch(`${API_URL}/weather/current`)
-        if (!response.ok) throw new Error('Weather request failed')
-        const result = await response.json()
-        if (isCurrent) setWeather(result.weather ?? null)
-      } catch {
-        if (isCurrent) setWeather(null)
-      }
+        const [cw, fc] = await Promise.all([
+          fetchCurrentWeather().catch(() => null),
+          fetchForecast(7).catch(() => null),
+        ])
 
-      try {
-        const response = await fetch(`${FORECAST_API_URL}/forecast?days=7`)
-        if (!response.ok) throw new Error('Forecast request failed')
-        const result = await response.json()
-        if (isCurrent) setForecast(Array.isArray(result.forecast) ? result.forecast : [])
-      } catch {
-        if (isCurrent) setForecast([])
+        if (!isCurrent) return
+
+        if (cw) {
+          setWeather(cw.weather ?? null)
+          setWeatherStatus(cw.status ?? 'unknown')
+          setTimestamp(cw.timestamp ?? null)
+        } else {
+          setWeather(null)
+          setWeatherStatus('offline')
+        }
+
+        if (fc?.forecast) {
+          setForecast(fc.forecast)
+        } else {
+          setForecast([])
+        }
+
+        setError(null)
+      } catch (e) {
+        if (isCurrent) {
+          setError(e instanceof Error ? e.message : 'Failed to load data')
+        }
+      } finally {
+        if (isCurrent) setLoading(false)
       }
     }
 
-    loadWeather()
-    const refresh = window.setInterval(loadWeather, 30000)
-
+    load()
+    const refresh = window.setInterval(load, 30_000)
     return () => {
       isCurrent = false
       window.clearInterval(refresh)
@@ -129,6 +123,14 @@ export default function Dashboard({ onNavigate, onAddStation, onShowNotification
     return '🤖'
   }
 
+  const todayLabel = new Date().toLocaleDateString(undefined, {
+    weekday: 'long',
+    month: 'long',
+    day: 'numeric',
+  })
+
+  const isLive = weatherStatus === 'online' && weather?.temperature_c != null
+
   return (
     <div className="pb-24 md:pb-8 space-y-6">
       {/* Header */}
@@ -136,10 +138,18 @@ export default function Dashboard({ onNavigate, onAddStation, onShowNotification
         <div>
           <p className="text-sm text-[var(--muted-foreground)] font-medium">Hi,</p>
           <h1 className="text-2xl font-bold text-[var(--foreground)]">Makori 👋</h1>
-          <p className="text-xs text-[var(--muted-foreground)] mt-0.5">Tuesday, September 22 · Kisii, Kenya</p>
+          <p className="text-xs text-[var(--muted-foreground)] mt-0.5">
+            {todayLabel} · Kisii, Kenya
+          </p>
         </div>
-        
       </div>
+
+      {error && (
+        <div className="rounded-xl border border-[var(--danger)]/40 bg-[var(--danger-soft)] px-4 py-3 text-sm text-[var(--danger-strong)]">
+          Could not reach the API. Check that the backend is running and <code className="text-xs">VITE_API_URL</code> is set correctly.
+          <span className="block mt-1 opacity-80 text-xs">{error}</span>
+        </div>
+      )}
 
       {/* Live Weather Card */}
       <div
@@ -151,35 +161,61 @@ export default function Dashboard({ onNavigate, onAddStation, onShowNotification
         <div className="relative">
           <div className="flex items-start justify-between mb-3">
             <div>
-              <p className="text-[var(--success-soft)] text-xs font-medium mb-1">Live · Field A Station</p>
+              <p className="text-[var(--success-soft)] text-xs font-medium mb-1">
+                {isLive ? 'Live · Station 01' : weatherStatus === 'waiting_for_data' ? 'Waiting for station…' : loading ? 'Loading…' : 'Station offline'}
+              </p>
               <div className="flex items-baseline gap-2">
-                <span className="text-5xl font-bold text-[var(--primary-foreground)]">{weatherValue(weather?.temperature_c, '°C')}</span>
-                <span className="text-[var(--success-soft)] text-sm">Feels --</span>
+                <span className="text-5xl font-bold text-[var(--primary-foreground)]">
+                  {displayValue(weather?.temperature_c, '°C', 1)}
+                </span>
               </div>
-              <p className="text-[var(--primary-foreground)] font-medium mt-1">{weather?.rain_status ?? '--'}</p>
+              <p className="text-[var(--primary-foreground)] font-medium mt-1">
+                {weather?.rain_status ?? (isLive ? '—' : 'No data yet')}
+              </p>
+              {timestamp && (
+                <p className="text-[var(--success-soft)] text-xs mt-1">
+                  Updated {new Date(timestamp).toLocaleTimeString()}
+                </p>
+              )}
             </div>
-            <div className="text-5xl">🌤️</div>
+            <div className="text-5xl">
+              {rainIcon(forecast[0]?.rainfall?.probability)}
+            </div>
           </div>
           <div className="flex gap-4 mt-4 pt-4 border-t border-[var(--background)]/20">
             {[
-              { icon: '💧', label: 'Humidity', val: weatherValue(weather?.humidity_percent, '%') },
-              { icon: '💨', label: 'Wind', val: weatherValue(weather?.wind_speed_kmh, ' km/h') },
-              { icon: '🌡️', label: 'High/Low', val: forecast.length ? `${weatherValue(forecast[0].temperature?.max_c, '°')} / ${weatherValue(forecast[0].temperature?.min_c, '°')}` : '--' },
-              { icon: '🌧️', label: 'Rain', val: weatherValue(weather?.rainfall_mm, ' mm') },
-            ].map(m => (
+              { icon: '💧', label: 'Humidity', val: displayValue(weather?.humidity_percent, '%', 0) },
+              { icon: '💨', label: 'Wind', val: displayValue(weather?.wind_speed_kmh, ' km/h', 1) },
+              {
+                icon: '🌡️',
+                label: 'High / Low',
+                val: forecast[0]
+                  ? `${displayValue(forecast[0].temperature?.max_c, '°', 0)} / ${displayValue(forecast[0].temperature?.min_c, '°', 0)}`
+                  : '—',
+              },
+              { icon: '🌧️', label: 'Rain', val: displayValue(weather?.rainfall_mm, ' mm', 1) },
+            ].map((m) => (
               <div key={m.label} className="flex-1 min-w-0">
                 <p className="text-[var(--success-soft)] text-xs">{m.label}</p>
                 <p className="text-[var(--primary-foreground)] text-sm font-semibold truncate">{m.val}</p>
               </div>
             ))}
           </div>
-          {/* Hourly forecast fills the weather card width. */}
+
+          {/* 7-day strip from API */}
           <div className="grid grid-cols-7 gap-2 mt-4">
             {(forecast.length ? forecast : Array.from({ length: 7 }, () => null)).map((day, i) => (
-                <div key={day?.date ?? i} className="min-w-0 flex flex-col items-center gap-1 bg-[var(--background)]/10 rounded-xl px-1.5 py-2">
-                  <span className="text-[var(--success-soft)] text-xs">{day ? forecastLabel(day.date) : '--'}</span>
-                  <span className="text-base">{day ? '🌤️' : '--'}</span>
-                  <span className="text-[var(--primary-foreground)] text-sm font-semibold">{weatherValue(day?.temperature?.avg_c, '°')}</span>
+              <div
+                key={day?.date ?? i}
+                className="min-w-0 flex flex-col items-center gap-1 bg-[var(--background)]/10 rounded-xl px-1.5 py-2"
+              >
+                <span className="text-[var(--success-soft)] text-xs">
+                  {day ? weekdayLabel(day.date) : '—'}
+                </span>
+                <span className="text-base">{day ? rainIcon(day.rainfall?.probability) : '—'}</span>
+                <span className="text-[var(--primary-foreground)] text-sm font-semibold">
+                  {displayValue(day?.temperature?.avg_c, '°', 0)}
+                </span>
               </div>
             ))}
           </div>
@@ -190,34 +226,54 @@ export default function Dashboard({ onNavigate, onAddStation, onShowNotification
       <div>
         <div className="flex items-center justify-between mb-3">
           <h2 className="font-semibold text-[var(--foreground)] text-sm">Station Status</h2>
-          <button onClick={() => onNavigate('profile')} className="text-xs text-[var(--primary)] font-medium hover:text-[var(--primary-hover)]">
+          <button
+            onClick={() => onNavigate('profile')}
+            className="text-xs text-[var(--primary)] font-medium hover:text-[var(--primary-hover)]"
+          >
             Manage →
           </button>
         </div>
         <div className="flex gap-3 overflow-x-auto hide-scrollbar -mx-1 px-1 pb-1">
           {stations.map((s, i) => (
-            <div key={i} className="flex-shrink-0 bg-[var(--background)] border border-[var(--border)] rounded-xl p-3 w-44">
+            <div
+              key={i}
+              className="flex-shrink-0 bg-[var(--background)] border border-[var(--border)] rounded-xl p-3 w-44"
+            >
               <div className="flex items-center gap-1.5 mb-2">
-                <div className="w-2 h-2 rounded-full bg-[var(--success)]" />
-                <span className="text-xs text-[var(--muted-foreground)] font-medium truncate">{s.name}</span>
+                <div
+                  className={`w-2 h-2 rounded-full ${
+                    s.status === 'live' && isLive ? 'bg-[var(--success)]' : 'bg-[var(--muted-foreground)]'
+                  }`}
+                />
+                <span className="text-xs text-[var(--muted-foreground)] font-medium truncate">
+                  {s.name}
+                </span>
               </div>
-              <p className="text-xl font-bold text-[var(--foreground)]">{s.temp}°C</p>
+              <p className="text-xl font-bold text-[var(--foreground)]">
+                {i === 0 ? displayValue(weather?.temperature_c, '°C', 1) : '—'}
+              </p>
               <div className="flex gap-2 mt-1 text-xs text-[var(--muted-foreground)]">
-                <span>💧{s.humidity}%</span>
-                <span>💨{s.wind}km/h</span>
+                <span>💧{i === 0 ? displayValue(weather?.humidity_percent, '%', 0) : '—'}</span>
+                <span>💨{i === 0 ? displayValue(weather?.wind_speed_kmh, '', 0) : '—'} km/h</span>
               </div>
               <div className="mt-2 flex items-center gap-1">
                 <div className="flex-1 h-1 bg-[var(--muted)] rounded-full overflow-hidden">
-                  <div className="h-full bg-[var(--sky)] rounded-full" style={{ width: `${s.signal}%` }} />
+                  <div
+                    className="h-full bg-[var(--sky)] rounded-full"
+                    style={{ width: `${s.signal}%` }}
+                  />
                 </div>
                 <span className="text-xs text-[var(--muted-foreground)]">{s.signal}%</span>
               </div>
             </div>
           ))}
-          <button onClick={onAddStation} className="flex-shrink-0 bg-[var(--background)] border border-dashed border-[var(--border)] rounded-xl p-3 w-44 flex flex-col items-center justify-center gap-2 cursor-pointer hover:border-[var(--primary)] transition-colors">
+          <button
+            onClick={onAddStation}
+            className="flex-shrink-0 bg-[var(--background)] border border-dashed border-[var(--border)] rounded-xl p-3 w-44 flex flex-col items-center justify-center gap-2 cursor-pointer hover:border-[var(--primary)] transition-colors"
+          >
             <div className="w-8 h-8 rounded-full bg-[var(--secondary)] flex items-center justify-center">
               <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-                <path d="M7 2v10M2 7h10" stroke="var(--primary)" strokeWidth="2" strokeLinecap="round"/>
+                <path d="M7 2v10M2 7h10" stroke="var(--primary)" strokeWidth="2" strokeLinecap="round" />
               </svg>
             </div>
             <span className="text-xs text-[var(--muted-foreground)] text-center">Add station</span>
@@ -225,14 +281,19 @@ export default function Dashboard({ onNavigate, onAddStation, onShowNotification
         </div>
       </div>
 
-      {/* AI Insights */}
+      {/* AI Insights (still illustrative – no dedicated insights API yet) */}
       <div>
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
-            <h2 className="font-semibold text-[var(--foreground)] text-sm">Today's AI Insights</h2>
-            <span className="text-xs bg-[var(--warning)] text-[var(--accent)] font-semibold px-2 py-0.5 rounded-full">3</span>
+            <h2 className="font-semibold text-[var(--foreground)] text-sm">Today&apos;s AI Insights</h2>
+            <span className="text-xs bg-[var(--warning)] text-[var(--accent)] font-semibold px-2 py-0.5 rounded-full">
+              3
+            </span>
           </div>
-          <button onClick={() => onNavigate('insights')} className="text-xs text-[var(--primary)] font-medium hover:text-[var(--primary-hover)]">
+          <button
+            onClick={() => onNavigate('insights')}
+            className="text-xs text-[var(--primary)] font-medium hover:text-[var(--primary-hover)]"
+          >
             View all →
           </button>
         </div>
@@ -242,28 +303,26 @@ export default function Dashboard({ onNavigate, onAddStation, onShowNotification
             return (
               <div key={i} className="bg-[var(--background)] border border-[var(--border)] rounded-xl p-4">
                 <div className="flex items-start gap-3">
-                  <div className={`w-9 h-9 rounded-xl ${style.bg} flex items-center justify-center text-lg flex-shrink-0`}>
+                  <div
+                    className={`w-9 h-9 rounded-xl ${style.bg} flex items-center justify-center text-lg flex-shrink-0`}
+                  >
                     {typeIcon(ins.type)}
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between gap-2 mb-0.5">
                       <span className={`text-xs font-semibold ${style.text}`}>{style.label}</span>
-                      <span className="text-xs text-[var(--muted-foreground)]">{ins.crop}</span>
+                      {ins.saved && (
+                        <span className="text-xs text-[var(--success)] font-medium">{ins.saved}</span>
+                      )}
                     </div>
-                    <p className="text-sm font-semibold text-[var(--foreground)] mb-1">{ins.title}</p>
-                    <p className="text-xs text-[var(--muted-foreground)] leading-relaxed">{ins.body}</p>
-                    {ins.saved && (
-                      <p className="text-xs text-[var(--success-strong)] font-medium mt-1.5">💰 {ins.saved}</p>
-                    )}
+                    <p className="text-sm font-semibold text-[var(--foreground)]">{ins.title}</p>
+                    <p className="text-xs text-[var(--muted-foreground)] mt-0.5 line-clamp-2">{ins.body}</p>
+                    <p className="text-xs text-[var(--muted-foreground)] mt-1">{ins.crop}</p>
                     <button
                       onClick={() => setAddedInsight(i)}
-                      className={`mt-2.5 text-xs font-semibold px-3 py-1.5 rounded-lg transition-all ${
-                        addedInsight === i
-                          ? 'bg-[var(--secondary)] text-[var(--primary)]'
-                          : 'bg-[var(--primary)] text-[var(--primary-foreground)] hover:bg-[var(--primary-hover)]'
-                      }`}
+                      className="mt-2 text-xs font-medium text-[var(--primary)] hover:underline"
                     >
-                      {addedInsight === i ? '✓ Added to calendar' : '+ Add to calendar'}
+                      {addedInsight === i ? 'Added to calendar ✓' : 'Add to calendar'}
                     </button>
                   </div>
                 </div>
@@ -273,69 +332,47 @@ export default function Dashboard({ onNavigate, onAddStation, onShowNotification
         </div>
       </div>
 
-      {/* Upcoming Tasks */}
+      {/* Tasks */}
       <div>
         <div className="flex items-center justify-between mb-3">
-          <h2 className="font-semibold text-[var(--foreground)] text-sm">Upcoming Tasks</h2>
-          <button onClick={() => onNavigate('calendar')} className="text-xs text-[var(--primary)] font-medium hover:text-[var(--primary-hover)]">
-            View calendar →
+          <h2 className="font-semibold text-[var(--foreground)] text-sm">Upcoming tasks</h2>
+          <button
+            onClick={() => onNavigate('calendar')}
+            className="text-xs text-[var(--primary)] font-medium hover:text-[var(--primary-hover)]"
+          >
+            Calendar →
           </button>
         </div>
-        <div className="bg-[var(--background)] border border-[var(--border)] rounded-xl divide-y divide-[var(--muted)]">
-          {tasks.map((task, i) => (
-            <div key={i} className={`flex items-center gap-3 px-4 py-3 ${task.done ? 'opacity-50' : ''}`}>
-              <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${
-                task.done ? 'border-[var(--primary)] bg-[var(--primary)]' : 'border-[var(--border)]'
-              }`}>
-                {task.done && (
+        <div className="bg-[var(--background)] border border-[var(--border)] rounded-xl divide-y divide-[var(--border)]">
+          {tasks.map((t, i) => (
+            <div key={i} className="flex items-center gap-3 px-4 py-3">
+              <div
+                className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${
+                  t.done ? 'border-[var(--success)] bg-[var(--success)]' : 'border-[var(--border)]'
+                }`}
+              >
+                {t.done && (
                   <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
-                    <path d="M1.5 5l2.5 2.5 5-5" stroke="var(--primary-foreground)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                    <path d="M2 5l2 2 4-4" stroke="white" strokeWidth="1.5" strokeLinecap="round" />
                   </svg>
                 )}
               </div>
               <div className="flex-1 min-w-0">
-                <p className={`text-sm font-medium truncate ${task.done ? 'line-through text-[var(--muted-foreground)]' : 'text-[var(--foreground)]'}`}>
-                  {task.title}
+                <p
+                  className={`text-sm font-medium truncate ${
+                    t.done ? 'text-[var(--muted-foreground)] line-through' : 'text-[var(--foreground)]'
+                  }`}
+                >
+                  {t.title}
                 </p>
+                <p className="text-xs text-[var(--muted-foreground)]">{t.time}</p>
               </div>
-              <div className="flex items-center gap-2 flex-shrink-0">
-                {task.ai && (
-                  <span className="text-xs bg-[var(--warning)] text-[var(--accent)] font-medium px-1.5 py-0.5 rounded">AI</span>
-                )}
-                <span className="text-xs text-[var(--muted-foreground)]">{task.time}</span>
-              </div>
+              {t.ai && (
+                <span className="text-xs bg-[var(--secondary)] text-[var(--primary)] px-2 py-0.5 rounded-full font-medium">
+                  AI
+                </span>
+              )}
             </div>
-          ))}
-        </div>
-        <button
-          onClick={() => onNavigate('calendar')}
-          className="w-full mt-2 flex items-center justify-center gap-2 bg-[var(--background)] border border-dashed border-[var(--border)] text-[var(--muted-foreground)] text-sm font-medium py-2.5 rounded-xl hover:border-[var(--primary)] hover:text-[var(--primary)] transition-colors"
-        >
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-            <path d="M7 2v10M2 7h10" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
-          </svg>
-          Add task
-        </button>
-      </div>
-
-      {/* Quick Actions */}
-      <div>
-        <h2 className="font-semibold text-[var(--foreground)] text-sm mb-3">Quick Actions</h2>
-        <div className="grid grid-cols-4 gap-3">
-          {[
-            { icon: '📡', label: 'Check\nstations', tab: 'profile' },
-            { icon: '🌦️', label: '7-day\nforecast', tab: 'weather' },
-            { icon: '🌱', label: 'Crop\nadvice', tab: 'insights' },
-            { icon: '📋', label: 'Add\ntask', tab: 'calendar' },
-          ].map((a, i) => (
-            <button
-              key={i}
-              onClick={() => onNavigate(a.tab)}
-              className="bg-[var(--background)] border border-[var(--border)] rounded-xl p-3 flex flex-col items-center gap-2 hover:border-[var(--primary)] hover:shadow-sm transition-all"
-            >
-              <span className="text-2xl">{a.icon}</span>
-              <span className="text-xs text-[var(--muted-foreground)] font-medium text-center whitespace-pre-line leading-tight">{a.label}</span>
-            </button>
           ))}
         </div>
       </div>

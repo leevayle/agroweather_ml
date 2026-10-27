@@ -1,6 +1,7 @@
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
 #include <PubSubClient.h>
+#include <ArduinoJson.h>
 #include <DHT11.h>
 #include <Wire.h>
 #include "secrets.h"
@@ -147,6 +148,65 @@ float readWindDirectionDeg() {
   return (raw * 360.0) / 4096.0;
 }
 
+void publishWeather(
+  int dhtResult,
+  int temperature,
+  int humidity,
+  int rainAnalog,
+  int ldrValue,
+  float windSpeed,
+  float rainfallMm,
+  float windDirection
+) {
+  if (!mqttClient.connected()) {
+    Serial.println("MQTT publish skipped: not connected.");
+    return;
+  }
+
+  JsonDocument document;
+  document["station_id"] = "station_01";
+
+  if (dhtResult == 0) {
+    document["temperature_c"] = temperature;
+    document["humidity_percent"] = humidity;
+  } else {
+    document["temperature_c"] = nullptr;
+    document["humidity_percent"] = nullptr;
+  }
+
+  document["day_night"] =
+    ldrValue > LDR_DAY_THRESHOLD ? "night" : "day";
+  document["rain_sensor"] = rainAnalog;
+  document["rain_status"] =
+    rainAnalog < RAIN_THRESHOLD
+      ? "rain"
+      : rainAnalog < DRIZZLE_THRESHOLD ? "drizzle" : "dry";
+  document["rainfall_mm"] = rainfallMm;
+  document["wind_speed_kmh"] = windSpeed;
+  if (windDirection >= 0.0) {
+    document["wind_direction_deg"] = windDirection;
+  } else {
+    document["wind_direction_deg"] = nullptr;
+  }
+  document["pressure_hpa"] = nullptr;
+  document["ldr_value"] = ldrValue;
+
+  String payload;
+  serializeJson(document, payload);
+
+  Serial.print("Publishing weather to ");
+  Serial.println(MQTT_TOPIC);
+  Serial.println(payload);
+
+  if (mqttClient.publish(MQTT_TOPIC, payload.c_str())) {
+    Serial.println("MQTT weather publish succeeded.");
+  } else {
+    Serial.println("MQTT weather publish FAILED.");
+    Serial.print("MQTT state: ");
+    Serial.println(mqttClient.state());
+  }
+}
+
 // ============================================================
 // SETUP
 // ============================================================
@@ -240,5 +300,16 @@ void loop() {
     }
 
     Serial.println(); // Extra blank line between cycles
+
+    publishWeather(
+      dhtResult,
+      temp,
+      hum,
+      rainAnalog,
+      ldrValue,
+      windSpeed,
+      rainfallMm,
+      windDir
+    );
   }
 }

@@ -41,6 +41,10 @@ CORS_ORIGINS = [
     if origin.strip()
 ]
 
+LOCAL_FRONTEND_ORIGIN = "http://localhost:8443"
+if LOCAL_FRONTEND_ORIGIN not in CORS_ORIGINS:
+    CORS_ORIGINS.append(LOCAL_FRONTEND_ORIGIN)
+
 
 # ============================================================
 # MONGODB

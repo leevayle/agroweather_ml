@@ -1,4 +1,9 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import {
+  displayValue,
+  fetchCurrentWeather,
+  type CurrentWeatherData,
+} from '../lib/api'
 
 interface LandingProps {
   onGetStarted: () => void
@@ -7,6 +12,38 @@ interface LandingProps {
 
 export default function Landing({ onGetStarted, onSignIn }: LandingProps) {
   const [email, setEmail] = useState('')
+  const [weather, setWeather] = useState<CurrentWeatherData | null>(null)
+  const [weatherStatus, setWeatherStatus] = useState('loading')
+  const [weatherTimestamp, setWeatherTimestamp] = useState<string | null>(null)
+
+  useEffect(() => {
+    let isCurrent = true
+
+    const loadWeather = async () => {
+      try {
+        const current = await fetchCurrentWeather()
+        if (!isCurrent) return
+
+        setWeather(current.weather ?? null)
+        setWeatherStatus(current.status ?? 'offline')
+        setWeatherTimestamp(current.timestamp ?? null)
+      } catch {
+        if (!isCurrent) return
+
+        setWeather(null)
+        setWeatherStatus('offline')
+        setWeatherTimestamp(null)
+      }
+    }
+
+    void loadWeather()
+    const refresh = window.setInterval(loadWeather, 30_000)
+
+    return () => {
+      isCurrent = false
+      window.clearInterval(refresh)
+    }
+  }, [])
 
   const features = [
     {
@@ -167,25 +204,41 @@ export default function Landing({ onGetStarted, onSignIn }: LandingProps) {
                     <h3 className="text-lg font-semibold text-[var(--foreground)]">Farmer ☀️</h3>
                   </div>
                   <div className="flex items-center gap-2">
-                    <div className="w-2 h-2 rounded-full bg-[var(--success)]" />
-                    <span className="text-xs text-[var(--muted-foreground)]">Updated 1 minute ago</span>
+                    <div className={`w-2 h-2 rounded-full ${weatherStatus === 'online' ? 'bg-[var(--success)]' : 'bg-[var(--muted-foreground)]'}`} />
+                    <span className="text-xs text-[var(--muted-foreground)]">
+                      {weatherStatus === 'online' && weatherTimestamp
+                        ? `Updated ${new Date(weatherTimestamp).toLocaleTimeString()}`
+                        : weatherStatus === 'waiting_for_data'
+                          ? 'Waiting for station data'
+                          : weatherStatus === 'loading'
+                            ? 'Loading live weather'
+                            : 'Station offline'}
+                    </span>
                   </div>
                 </div>
                 <div className="grid grid-cols-3 gap-3 mb-4">
                   <div className="bg-[var(--sky)] text-[var(--primary-foreground)] rounded-xl p-4 col-span-1">
                     <p className="text-xs text-[var(--success-soft)] mb-1">Temperature</p>
-                    <p className="text-3xl font-bold">24°</p>
-                    <p className="text-xs text-[var(--success-soft)] mt-1">↑ 18° / ↓ 11°</p>
+                    <p className="text-3xl font-bold">{displayValue(weather?.temperature_c, '°', 1)}</p>
+                    <p className="text-xs text-[var(--success-soft)] mt-1">
+                      {weatherStatus === 'online' ? 'Current reading' : weatherStatus === 'loading' ? 'Loading…' : 'Offline'}
+                    </p>
                   </div>
                   <div className="bg-[var(--background)] rounded-xl p-4">
                     <p className="text-xs text-[var(--muted-foreground)] mb-1">Humidity</p>
-                    <p className="text-2xl font-bold text-[var(--sky)]">68%</p>
-                    <p className="text-xs text-[var(--muted-foreground)] mt-1">Optimal</p>
+                    <p className="text-2xl font-bold text-[var(--sky)]">{displayValue(weather?.humidity_percent, '%', 0)}</p>
+                    <p className="text-xs text-[var(--muted-foreground)] mt-1">
+                      {weatherStatus === 'online' ? 'Current reading' : weatherStatus === 'loading' ? 'Loading…' : 'Offline'}
+                    </p>
                   </div>
                   <div className="bg-[var(--background)] rounded-xl p-4">
                     <p className="text-xs text-[var(--muted-foreground)] mb-1">Wind</p>
-                    <p className="text-2xl font-bold text-[var(--foreground)]">12</p>
-                    <p className="text-xs text-[var(--muted-foreground)] mt-1">km/h NW</p>
+                    <p className="text-2xl font-bold text-[var(--foreground)]">{displayValue(weather?.wind_speed_kmh, '', 1)}</p>
+                    <p className="text-xs text-[var(--muted-foreground)] mt-1">
+                      {weather?.wind_direction_deg != null
+                        ? `${displayValue(weather.wind_direction_deg, '°')} · km/h`
+                        : 'km/h'}
+                    </p>
                   </div>
                 </div>
                 <div className="bg-[var(--background)] rounded-xl p-4 border border-[var(--border)]">

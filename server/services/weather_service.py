@@ -100,20 +100,15 @@ def save_weather_reading(
 
     weather = normalize_weather_payload(payload)
 
+    # Keep the live endpoint current even if historical persistence fails.
+    with _cache_lock:
+        _current_weather = weather.copy()
+
     # --------------------------------------------------------
     # Save historical reading
     # --------------------------------------------------------
 
     weather_collection.insert_one(weather.copy())
-
-
-    # --------------------------------------------------------
-    # Update current-weather cache
-    # --------------------------------------------------------
-
-    with _cache_lock:
-        _current_weather = weather.copy()
-
 
     # --------------------------------------------------------
     # Update station status
