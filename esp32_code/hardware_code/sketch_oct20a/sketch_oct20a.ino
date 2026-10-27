@@ -33,6 +33,10 @@ const float MM_PER_TIP = 0.2;
 const unsigned long TIP_DEBOUNCE_MS = 50;
 #define AS5600_ADDR 0x36
 
+const unsigned long LOG_INTERVAL = 5000;          // read + publish every 5s
+const unsigned long WIFI_RETRY_INTERVAL = 30000;  // retry WiFi every 30s
+const unsigned long CONNECT_WAIT_MS = 10000;      // max wait before continuing offline
+
 // ============================================================
 // OBJECTS & VARIABLES
 // ============================================================
@@ -48,7 +52,7 @@ volatile unsigned long tipsSincePublish = 0;
 volatile unsigned long lastTipMs = 0;
 
 unsigned long lastLogTime = 0;
-const unsigned long LOG_INTERVAL = 5000;
+unsigned long lastWifiRetry = 0;
 
 // ============================================================
 // INTERRUPTS
@@ -67,41 +71,124 @@ void IRAM_ATTR countTip() {
 }
 
 // ============================================================
+// SENSOR PRESENCE CHECKS
+// ============================================================
+bool checkDHT11() {
+  int t = 0, h = 0;
+  return dht11.readTemperatureHumidity(t, h) == 0;
+}
+
+bool checkRainSensor() {
+  int v = analogRead(RAIN_ANALOG_PIN);
+  // floating/unconnected pins often sit at extremes or noise;
+  // treat a readable ADC range as present
+  return v >= 0 && v <= 4095;
+}
+
+bool checkLDR() {
+  int v = analogRead(LDR_PIN);
+  return v >= 0 && v <= 4095;
+}
+
+bool checkAS5600() {
+  Wire.beginTransmission(AS5600_ADDR);
+  return Wire.endTransmission() == 0;
+}
+
+bool checkHallSensor() {
+  // hall is interrupt-driven; pin mode valid counts as wired-ready
+  pinMode(HALL_SENSOR_PIN, INPUT_PULLUP);
+  return true;
+}
+
+void reportSensors() {
+  Serial.println("--- Sensors ---");
+  Serial.print("dht11  - ");
+  Serial.println(checkDHT11() ? "online" : "offline");
+
+  Serial.print("rain   - ");
+  Serial.println(checkRainSensor() ? "online" : "offline");
+
+  Serial.print("ldr    - ");
+  Serial.println(checkLDR() ? "online" : "offline");
+
+  Serial.print("as5600 - ");
+  Serial.println(checkAS5600() ? "online" : "offline");
+
+  Serial.print("hall   - ");
+  Serial.println(checkHallSensor() ? "online" : "offline");
+  Serial.println();
+}
+
+// ============================================================
 // CONNECTIVITY
 // ============================================================
-void connectWiFi() {
-  if (WiFi.status() == WL_CONNECTED) return;
+bool tryConnectWiFi(unsigned long timeoutMs) {
+  if (WiFi.status() == WL_CONNECTED) return true;
 
-  Serial.println("\nConnecting to Wi-Fi...");
+  Serial.println("Connecting to Wi-Fi...");
   WiFi.mode(WIFI_STA);
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
 
-  while (WiFi.status() != WL_CONNECTED) {
+  unsigned long start = millis();
+  while (WiFi.status() != WL_CONNECTED && (millis() - start) < timeoutMs) {
     digitalWrite(LED_PIN, HIGH);
     delay(100);
     digitalWrite(LED_PIN, LOW);
     delay(100);
-    Serial.print(".");
   }
-  Serial.println("\nWi-Fi Connected!");
-  Serial.print("IP: ");
-  Serial.println(WiFi.localIP());
+
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.print("Wi-Fi OK | IP ");
+    Serial.println(WiFi.localIP());
+    return true;
+  }
+
+  Serial.println("Wi-Fi unavailable (will keep retrying)");
+  return false;
 }
 
-bool connectMQTT() {
+bool tryConnectMQTT(unsigned long timeoutMs) {
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("MQTT skipped: no Wi-Fi");
+    return false;
+  }
+
   if (mqttClient.connected()) return true;
 
   Serial.println("Connecting to MQTT...");
   String clientId = "agroweather-esp32-" + String((uint32_t)ESP.getEfuseMac(), HEX);
 
-  if (mqttClient.connect(clientId.c_str(), MQTT_USERNAME, MQTT_PASSWORD)) {
-    Serial.println("MQTT Connected Successfully!");
-    return true;
+  unsigned long start = millis();
+  while ((millis() - start) < timeoutMs) {
+    if (mqttClient.connect(clientId.c_str(), MQTT_USERNAME, MQTT_PASSWORD)) {
+      Serial.println("MQTT connected");
+      return true;
+    }
+    delay(500);
   }
 
-  Serial.print("MQTT Connection Failed, state: ");
+  Serial.print("MQTT unavailable, state ");
   Serial.println(mqttClient.state());
   return false;
+}
+
+void maintainConnections() {
+  unsigned long now = millis();
+
+  // Retry WiFi every 30s if down
+  if (WiFi.status() != WL_CONNECTED) {
+    if (now - lastWifiRetry >= WIFI_RETRY_INTERVAL) {
+      lastWifiRetry = now;
+      tryConnectWiFi(CONNECT_WAIT_MS);
+    }
+    return;
+  }
+
+  // WiFi is up — keep MQTT up
+  if (!mqttClient.connected()) {
+    tryConnectMQTT(3000);
+  }
 }
 
 // ============================================================
@@ -145,6 +232,61 @@ float readWindDirectionDeg() {
 }
 
 // ============================================================
+// LOG READINGS (always)
+// ============================================================
+void logReadings(
+  int dhtResult,
+  int temperature,
+  int humidity,
+  int rainAnalog,
+  int ldrValue,
+  float windSpeed,
+  float rainfallMm,
+  float windDirection
+) {
+  Serial.print("[READ] ");
+
+  if (dhtResult == 0) {
+    Serial.print(temperature);
+    Serial.print("°C ");
+    Serial.print(humidity);
+    Serial.print("%");
+  } else {
+    Serial.print("DHT ERR");
+  }
+
+  Serial.print(" | wind ");
+  Serial.print(windSpeed, 2);
+  Serial.print(" km/h");
+
+  Serial.print(" | rain ");
+  if (rainAnalog < RAIN_THRESHOLD) {
+    Serial.print("rain");
+  } else if (rainAnalog < DRIZZLE_THRESHOLD) {
+    Serial.print("drizzle");
+  } else {
+    Serial.print("dry");
+  }
+
+  Serial.print(" ");
+  Serial.print(rainfallMm, 2);
+  Serial.print("mm");
+
+  Serial.print(" | ldr ");
+  Serial.print(ldrValue);
+
+  Serial.print(" | dir ");
+  if (windDirection >= 0.0) {
+    Serial.print(windDirection, 1);
+    Serial.print("°");
+  } else {
+    Serial.print("n/a");
+  }
+
+  Serial.println();
+}
+
+// ============================================================
 // PUBLISH
 // ============================================================
 void publishWeather(
@@ -157,10 +299,13 @@ void publishWeather(
   float rainfallMm,
   float windDirection
 ) {
-  Serial.println(">>> ENTER publishWeather()");
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("[PUB] skipped: no Wi-Fi");
+    return;
+  }
 
   if (!mqttClient.connected()) {
-    Serial.println("MQTT publish skipped: not connected.");
+    Serial.println("[PUB] skipped: MQTT not connected");
     return;
   }
 
@@ -179,13 +324,15 @@ void publishWeather(
   document["day_night"] = (ldrValue > LDR_DAY_THRESHOLD) ? "night" : "day";
   document["rain_sensor"] = rainAnalog;
 
+  const char* rainStatus;
   if (rainAnalog < RAIN_THRESHOLD) {
-    document["rain_status"] = "rain";
+    rainStatus = "rain";
   } else if (rainAnalog < DRIZZLE_THRESHOLD) {
-    document["rain_status"] = "drizzle";
+    rainStatus = "drizzle";
   } else {
-    document["rain_status"] = "dry";
+    rainStatus = "dry";
   }
+  document["rain_status"] = rainStatus;
 
   document["rainfall_mm"] = rainfallMm;
   document["wind_speed_kmh"] = windSpeed;
@@ -202,30 +349,19 @@ void publishWeather(
   char payload[512];
   size_t n = serializeJson(document, payload, sizeof(payload));
   if (n == 0) {
-    Serial.println("JSON serialize failed.");
+    Serial.println("[PUB] FAIL: JSON serialize");
     return;
   }
 
-  Serial.print("Publishing weather to ");
-  Serial.println(MQTT_TOPIC);
-  Serial.println(payload);
-
-  // Give PubSubClient a chance to service the socket
   mqttClient.loop();
-
   bool ok = mqttClient.publish(MQTT_TOPIC, payload, false);
 
   if (ok) {
-    Serial.println("MQTT weather publish succeeded.");
+    Serial.println("[PUB] ok");
   } else {
-    Serial.println("MQTT weather publish FAILED.");
-    Serial.print("MQTT state: ");
+    Serial.print("[PUB] FAIL | state ");
     Serial.println(mqttClient.state());
-    Serial.print("Payload length: ");
-    Serial.println(strlen(payload));
   }
-
-  Serial.println(">>> EXIT publishWeather()");
 }
 
 // ============================================================
@@ -235,9 +371,7 @@ void setup() {
   Serial.begin(115200);
   delay(1000);
 
-  Serial.println("\n=================================");
-  Serial.println("   AGROWEATHER LIVE PUBLISHER    ");
-  Serial.println("=================================");
+  Serial.println("AgroWeather station starting...");
 
   pinMode(LED_PIN, OUTPUT);
   digitalWrite(LED_PIN, LOW);
@@ -255,24 +389,34 @@ void setup() {
   Wire.begin(AS5600_SDA, AS5600_SCL);
   Wire.setClock(100000);
 
-  connectWiFi();
+  // 1) Sensor check
+  reportSensors();
 
+  // 2) Wi-Fi (wait up to 10s, then continue offline)
+  lastWifiRetry = millis();
+  tryConnectWiFi(CONNECT_WAIT_MS);
+
+  // 3) MQTT (only if Wi-Fi is up; wait up to 10s)
   secureClient.setInsecure();
   mqttClient.setServer(MQTT_HOST, MQTT_PORT);
-  mqttClient.setBufferSize(512);   // important
+  mqttClient.setBufferSize(512);
+
+  if (WiFi.status() == WL_CONNECTED) {
+    tryConnectMQTT(CONNECT_WAIT_MS);
+  }
 
   lastWindMeasurement = millis();
-  connectMQTT();
+  lastLogTime = millis();
+
+  Serial.println("Entering read/publish loop...");
 }
 
 // ============================================================
 // LOOP
 // ============================================================
 void loop() {
-  connectWiFi();
-  if (!mqttClient.connected()) {
-    connectMQTT();
-  }
+  // Keep trying connections in background
+  maintainConnections();
   mqttClient.loop();
 
   unsigned long now = millis();
@@ -292,24 +436,19 @@ void loop() {
     float rainfallMm = readRainfallMmAndReset();
     float windDir = readWindDirectionDeg();
 
-    Serial.println("--- WEATHER SENSOR READINGS ---");
+    // Always read + display
+    logReadings(
+      dhtResult,
+      temp,
+      hum,
+      rainAnalog,
+      ldrValue,
+      windSpeed,
+      rainfallMm,
+      windDir
+    );
 
-    if (dhtResult == 0) {
-      Serial.print("Temperature:      "); Serial.print(temp); Serial.println(" °C");
-      Serial.print("Humidity:         "); Serial.print(hum); Serial.println(" %");
-    } else {
-      Serial.println("Temperature:      ERR");
-      Serial.println("Humidity:         ERR");
-    }
-
-    Serial.print("Light Level (LDR): "); Serial.println(ldrValue);
-    Serial.print("Rain Surface AO:  "); Serial.println(rainAnalog);
-    Serial.print("Rainfall:         "); Serial.print(rainfallMm, 2); Serial.println(" mm");
-    Serial.print("Wind Speed:       "); Serial.print(windSpeed, 2); Serial.println(" km/h");
-    Serial.print("Wind Direction:   "); Serial.println(windDir, 1);
-    Serial.println();
-
-    Serial.println("About to publish...");
+    // Then publish if online
     publishWeather(
       dhtResult,
       temp,
@@ -320,6 +459,5 @@ void loop() {
       rainfallMm,
       windDir
     );
-    Serial.println();
   }
 }
