@@ -110,6 +110,17 @@ JWT_EXPIRE_MINUTES = int(
     os.getenv("JWT_EXPIRE_MINUTES", "10080")
 )
 
+CONTACT_EMAIL = os.getenv(
+    "CONTACT_EMAIL",
+    "",
+).strip()
+
+SMTP_HOST = os.getenv("SMTP_HOST", "").strip()
+SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
+SMTP_USERNAME = os.getenv("SMTP_USERNAME", "").strip()
+SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
+SMTP_FROM_EMAIL = os.getenv("SMTP_FROM_EMAIL", SMTP_USERNAME).strip()
+
 
 # ============================================================
 # MACHINE LEARNING

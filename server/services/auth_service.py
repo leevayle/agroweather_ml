@@ -99,6 +99,26 @@ def register_user(
     return document
 
 
+def update_user_crops(
+    user: Dict[str, Any],
+    crops: List[str],
+) -> Dict[str, Any]:
+    updated_at = datetime.now(timezone.utc)
+    users_collection.update_one(
+        {"_id": user["_id"]},
+        {
+            "$set": {
+                "crops": crops,
+                "updated_at": updated_at,
+            },
+        },
+    )
+    updated_user = user.copy()
+    updated_user["crops"] = crops
+    updated_user["updated_at"] = updated_at
+    return updated_user
+
+
 def authenticate_user(email: str, password: str) -> Dict[str, Any]:
     user = find_user_by_email(email)
     if not user:

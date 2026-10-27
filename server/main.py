@@ -22,6 +22,7 @@ from server.services.forecast_service import (
 )
 
 from server.api.auth import router as auth_router
+from server.api.contact import router as contact_router
 
 
 
@@ -135,6 +136,8 @@ app.include_router(weather_router)
 app.include_router(forecast_router)
 
 app.include_router(auth_router)
+
+app.include_router(contact_router)
 
 
 # ============================================================

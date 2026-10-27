@@ -35,6 +35,13 @@ export interface AuthResponse {
   user: AuthUser
 }
 
+export interface ContactMessage {
+  name: string
+  email: string
+  phone?: string
+  message: string
+}
+
 export interface CurrentWeatherData {
   temperature_c: number | null
   humidity_percent: number | null
@@ -183,6 +190,16 @@ export async function fetchMe(): Promise<AuthUser> {
   return user
 }
 
+export async function updateMyCrops(crops: string[]): Promise<AuthUser> {
+  const user = await requestJson<AuthUser>('/auth/me/crops', {
+    method: 'PUT',
+    body: JSON.stringify({ crops }),
+  })
+  const token = getToken()
+  if (token) saveSession(token, user)
+  return user
+}
+
 export function logout(): void {
   clearSession()
 }
@@ -197,6 +214,13 @@ export async function fetchForecast(days = 7): Promise<ForecastResponse> {
 
 export async function fetchHealth(): Promise<Record<string, unknown>> {
   return requestJson('/health')
+}
+
+export async function sendContactMessage(payload: ContactMessage): Promise<{ status: string }> {
+  return requestJson('/contact', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
 }
 
 export function displayValue(

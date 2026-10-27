@@ -7,11 +7,12 @@ import {
   fullDateLabel,
   rainIcon,
   rainLabel,
+  type AuthUser,
   type CurrentWeatherData,
   type ForecastDay,
 } from '../../lib/api'
 
-export default function Weather() {
+export default function Weather({ user }: { user: AuthUser | null }) {
   const [weather, setWeather] = useState<CurrentWeatherData | null>(null)
   const [weatherStatus, setWeatherStatus] = useState<string>('loading')
   const [timestamp, setTimestamp] = useState<string | null>(null)
@@ -69,7 +70,9 @@ export default function Weather() {
     <div className="pb-24 md:pb-8 space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-[var(--foreground)]">Weather</h1>
-        <p className="text-sm text-[var(--muted-foreground)]">Kisii, Kenya · {today}</p>
+        <p className="text-sm text-[var(--muted-foreground)]">
+          {user?.location ? `${user.location} · ` : ''}{today}
+        </p>
       </div>
 
       {error && (

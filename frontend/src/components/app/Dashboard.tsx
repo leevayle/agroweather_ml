@@ -5,61 +5,21 @@ import {
   displayValue,
   weekdayLabel,
   rainIcon,
+  type AuthUser,
   type CurrentWeatherData,
   type ForecastDay,
 } from '../../lib/api'
 
 interface DashboardProps {
+  user: AuthUser | null
   onNavigate: (tab: string) => void
   onAddStation: () => void
-  onShowNotifications: () => void
 }
 
-// Placeholder station cards until multi-station API exists
-const stations = [
-  { name: 'Station 01', status: 'live', signal: 92 },
-  { name: 'Field B (demo)', status: 'demo', signal: 87 },
-  { name: 'Greenhouse (demo)', status: 'demo', signal: 99 },
-]
-
-const insights = [
-  {
-    type: 'irrigation',
-    crop: 'Corn — Field B',
-    title: 'Skip Thursday irrigation',
-    body: 'Rain expected in the next days according to the ML forecast. Soil moisture is healthy — irrigation would cause oversaturation. Resume after dry spell.',
-    priority: 'high',
-    saved: 'Water savings',
-  },
-  {
-    type: 'harvest',
-    crop: 'Soybeans — Field A',
-    title: 'Watch harvest window',
-    body: 'Dry conditions in the forecast create a favourable combine window. Monitor moisture and plan accordingly.',
-    priority: 'medium',
-    saved: null,
-  },
-  {
-    type: 'frost',
-    crop: 'All fields',
-    title: 'Monitor low temperatures',
-    body: 'Check the 7-day forecast for nights that dip near freezing and protect sensitive crops if needed.',
-    priority: 'warning',
-    saved: null,
-  },
-]
-
-const tasks = [
-  { title: 'Apply fertilizer — Field A', time: 'Today', done: false, ai: false },
-  { title: 'Check irrigation lines — South pivot', time: 'Tomorrow', done: false, ai: false },
-  { title: 'Soil sample — Greenhouse beds', time: 'Later', done: true, ai: false },
-  { title: 'Harvest window — Soybeans', time: 'This week', done: false, ai: true },
-]
-
-export default function Dashboard({ onNavigate, onAddStation, onShowNotifications }: DashboardProps) {
-  const [addedInsight, setAddedInsight] = useState<number | null>(null)
+export default function Dashboard({ user, onNavigate, onAddStation }: DashboardProps) {
   const [weather, setWeather] = useState<CurrentWeatherData | null>(null)
   const [weatherStatus, setWeatherStatus] = useState<string>('loading')
+  const [stationId, setStationId] = useState<string | null>(null)
   const [timestamp, setTimestamp] = useState<string | null>(null)
   const [forecast, setForecast] = useState<ForecastDay[]>([])
   const [loading, setLoading] = useState(true)
@@ -80,10 +40,12 @@ export default function Dashboard({ onNavigate, onAddStation, onShowNotification
         if (cw) {
           setWeather(cw.weather ?? null)
           setWeatherStatus(cw.status ?? 'unknown')
+          setStationId(cw.station_id ?? null)
           setTimestamp(cw.timestamp ?? null)
         } else {
           setWeather(null)
           setWeatherStatus('offline')
+          setStationId(null)
         }
 
         if (fc?.forecast) {
@@ -110,19 +72,6 @@ export default function Dashboard({ onNavigate, onAddStation, onShowNotification
     }
   }, [])
 
-  const priorityStyle = (p: string) => {
-    if (p === 'high') return { bg: 'bg-[var(--warning)]', text: 'text-[var(--accent)]', label: 'Action today' }
-    if (p === 'warning') return { bg: 'bg-[var(--danger-soft)]', text: 'text-[var(--danger-strong)]', label: 'Alert' }
-    return { bg: 'bg-[var(--secondary)]', text: 'text-[var(--primary)]', label: 'Plan ahead' }
-  }
-
-  const typeIcon = (t: string) => {
-    if (t === 'irrigation') return '💧'
-    if (t === 'harvest') return '🌾'
-    if (t === 'frost') return '❄️'
-    return '🤖'
-  }
-
   const todayLabel = new Date().toLocaleDateString(undefined, {
     weekday: 'long',
     month: 'long',
@@ -137,9 +86,11 @@ export default function Dashboard({ onNavigate, onAddStation, onShowNotification
       <div className="flex items-start justify-between">
         <div>
           <p className="text-sm text-[var(--muted-foreground)] font-medium">Hi,</p>
-          <h1 className="text-2xl font-bold text-[var(--foreground)]">Makori 👋</h1>
+          <h1 className="text-2xl font-bold text-[var(--foreground)]">
+            {user?.first_name || 'there'} 👋
+          </h1>
           <p className="text-xs text-[var(--muted-foreground)] mt-0.5">
-            {todayLabel} · Kisii, Kenya
+            {todayLabel}{user?.location ? ` · ${user.location}` : ''}
           </p>
         </div>
       </div>
@@ -162,7 +113,13 @@ export default function Dashboard({ onNavigate, onAddStation, onShowNotification
           <div className="flex items-start justify-between mb-3">
             <div>
               <p className="text-[var(--success-soft)] text-xs font-medium mb-1">
-                {isLive ? 'Live · Station 01' : weatherStatus === 'waiting_for_data' ? 'Waiting for station…' : loading ? 'Loading…' : 'Station offline'}
+                {isLive
+                  ? `Live · ${stationId ?? 'Weather station'}`
+                  : weatherStatus === 'waiting_for_data'
+                    ? 'Waiting for station…'
+                    : loading
+                      ? 'Loading…'
+                      : 'Station offline'}
               </p>
               <div className="flex items-baseline gap-2">
                 <span className="text-5xl font-bold text-[var(--primary-foreground)]">
@@ -234,39 +191,35 @@ export default function Dashboard({ onNavigate, onAddStation, onShowNotification
           </button>
         </div>
         <div className="flex gap-3 overflow-x-auto hide-scrollbar -mx-1 px-1 pb-1">
-          {stations.map((s, i) => (
+          {stationId ? (
             <div
-              key={i}
-              className="flex-shrink-0 bg-[var(--background)] border border-[var(--border)] rounded-xl p-3 w-44"
+              className="flex-shrink-0 bg-[var(--background)] border border-[var(--border)] rounded-xl p-3 w-52"
             >
               <div className="flex items-center gap-1.5 mb-2">
                 <div
-                  className={`w-2 h-2 rounded-full ${
-                    s.status === 'live' && isLive ? 'bg-[var(--success)]' : 'bg-[var(--muted-foreground)]'
-                  }`}
+                  className={`w-2 h-2 rounded-full ${isLive ? 'bg-[var(--success)]' : 'bg-[var(--muted-foreground)]'}`}
                 />
                 <span className="text-xs text-[var(--muted-foreground)] font-medium truncate">
-                  {s.name}
+                  {stationId}
                 </span>
               </div>
-              <p className="text-xl font-bold text-[var(--foreground)]">
-                {i === 0 ? displayValue(weather?.temperature_c, '°C', 1) : '—'}
+              <p className="text-xs text-[var(--muted-foreground)]">
+                {isLive
+                  ? 'Receiving weather readings'
+                  : weatherStatus === 'waiting_for_data'
+                    ? 'Waiting for first reading'
+                    : 'No live reading'}
               </p>
               <div className="flex gap-2 mt-1 text-xs text-[var(--muted-foreground)]">
-                <span>💧{i === 0 ? displayValue(weather?.humidity_percent, '%', 0) : '—'}</span>
-                <span>💨{i === 0 ? displayValue(weather?.wind_speed_kmh, '', 0) : '—'} km/h</span>
-              </div>
-              <div className="mt-2 flex items-center gap-1">
-                <div className="flex-1 h-1 bg-[var(--muted)] rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-[var(--sky)] rounded-full"
-                    style={{ width: `${s.signal}%` }}
-                  />
-                </div>
-                <span className="text-xs text-[var(--muted-foreground)]">{s.signal}%</span>
+                <span>💧{displayValue(weather?.humidity_percent, '%', 0)}</span>
+                <span>💨{displayValue(weather?.wind_speed_kmh, ' km/h', 0)}</span>
               </div>
             </div>
-          ))}
+          ) : (
+            <p className="text-sm text-[var(--muted-foreground)]">
+              {weatherStatus === 'loading' ? 'Loading station status…' : 'No station readings available.'}
+            </p>
+          )}
           <button
             onClick={onAddStation}
             className="flex-shrink-0 bg-[var(--background)] border border-dashed border-[var(--border)] rounded-xl p-3 w-44 flex flex-col items-center justify-center gap-2 cursor-pointer hover:border-[var(--primary)] transition-colors"
@@ -281,15 +234,9 @@ export default function Dashboard({ onNavigate, onAddStation, onShowNotification
         </div>
       </div>
 
-      {/* AI Insights (still illustrative – no dedicated insights API yet) */}
       <div>
         <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center gap-2">
-            <h2 className="font-semibold text-[var(--foreground)] text-sm">Today&apos;s AI Insights</h2>
-            <span className="text-xs bg-[var(--warning)] text-[var(--accent)] font-semibold px-2 py-0.5 rounded-full">
-              3
-            </span>
-          </div>
+          <h2 className="font-semibold text-[var(--foreground)] text-sm">Today&apos;s AI Insights</h2>
           <button
             onClick={() => onNavigate('insights')}
             className="text-xs text-[var(--primary)] font-medium hover:text-[var(--primary-hover)]"
@@ -297,38 +244,10 @@ export default function Dashboard({ onNavigate, onAddStation, onShowNotification
             View all →
           </button>
         </div>
-        <div className="space-y-3">
-          {insights.map((ins, i) => {
-            const style = priorityStyle(ins.priority)
-            return (
-              <div key={i} className="bg-[var(--background)] border border-[var(--border)] rounded-xl p-4">
-                <div className="flex items-start gap-3">
-                  <div
-                    className={`w-9 h-9 rounded-xl ${style.bg} flex items-center justify-center text-lg flex-shrink-0`}
-                  >
-                    {typeIcon(ins.type)}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between gap-2 mb-0.5">
-                      <span className={`text-xs font-semibold ${style.text}`}>{style.label}</span>
-                      {ins.saved && (
-                        <span className="text-xs text-[var(--success)] font-medium">{ins.saved}</span>
-                      )}
-                    </div>
-                    <p className="text-sm font-semibold text-[var(--foreground)]">{ins.title}</p>
-                    <p className="text-xs text-[var(--muted-foreground)] mt-0.5 line-clamp-2">{ins.body}</p>
-                    <p className="text-xs text-[var(--muted-foreground)] mt-1">{ins.crop}</p>
-                    <button
-                      onClick={() => setAddedInsight(i)}
-                      className="mt-2 text-xs font-medium text-[var(--primary)] hover:underline"
-                    >
-                      {addedInsight === i ? 'Added to calendar ✓' : 'Add to calendar'}
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )
-          })}
+        <div className="bg-[var(--background)] border border-[var(--border)] rounded-xl p-4">
+          <p className="text-sm text-[var(--muted-foreground)]">
+            Personalized insights are not available yet.
+          </p>
         </div>
       </div>
 
@@ -344,36 +263,9 @@ export default function Dashboard({ onNavigate, onAddStation, onShowNotification
           </button>
         </div>
         <div className="bg-[var(--background)] border border-[var(--border)] rounded-xl divide-y divide-[var(--border)]">
-          {tasks.map((t, i) => (
-            <div key={i} className="flex items-center gap-3 px-4 py-3">
-              <div
-                className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${
-                  t.done ? 'border-[var(--success)] bg-[var(--success)]' : 'border-[var(--border)]'
-                }`}
-              >
-                {t.done && (
-                  <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
-                    <path d="M2 5l2 2 4-4" stroke="white" strokeWidth="1.5" strokeLinecap="round" />
-                  </svg>
-                )}
-              </div>
-              <div className="flex-1 min-w-0">
-                <p
-                  className={`text-sm font-medium truncate ${
-                    t.done ? 'text-[var(--muted-foreground)] line-through' : 'text-[var(--foreground)]'
-                  }`}
-                >
-                  {t.title}
-                </p>
-                <p className="text-xs text-[var(--muted-foreground)]">{t.time}</p>
-              </div>
-              {t.ai && (
-                <span className="text-xs bg-[var(--secondary)] text-[var(--primary)] px-2 py-0.5 rounded-full font-medium">
-                  AI
-                </span>
-              )}
-            </div>
-          ))}
+          <p className="px-4 py-3 text-sm text-[var(--muted-foreground)]">
+            You have no saved tasks yet. Add one in the calendar.
+          </p>
         </div>
       </div>
     </div>

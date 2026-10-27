@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import Landing from './components/Landing'
+import LegalPage from './components/LegalPage'
 import Onboarding from './components/Onboarding'
 import SignIn from './components/SignIn'
 import BottomNav from './components/app/BottomNav'
@@ -58,14 +59,28 @@ function StationModal({ onClose }: { onClose: () => void }) {
   )
 }
 
-type Screen = 'landing' | 'onboarding' | 'signin' | 'app'
+type Screen = 'landing' | 'onboarding' | 'signin' | 'app' | 'privacy' | 'terms'
+
+function screenFromPath(): Screen {
+  if (window.location.pathname === '/privacy-policy') return 'privacy'
+  if (window.location.pathname === '/terms-of-service') return 'terms'
+  return 'landing'
+}
 
 export default function App() {
-  const [screen, setScreen] = useState<Screen>('landing')
+  const [screen, setScreen] = useState<Screen>(screenFromPath)
   const [activeTab, setActiveTab] = useState('dashboard')
   const [showStationModal, setShowStationModal] = useState(false)
+  const [signupEmail, setSignupEmail] = useState('')
+  const [startSignupAtForm, setStartSignupAtForm] = useState(false)
   const [user, setUser] = useState<AuthUser | null>(getStoredUser())
   const [bootstrapping, setBootstrapping] = useState(true)
+
+  useEffect(() => {
+    const handlePopState = () => setScreen(screenFromPath())
+    window.addEventListener('popstate', handlePopState)
+    return () => window.removeEventListener('popstate', handlePopState)
+  }, [])
 
   useEffect(() => {
     let active = true
@@ -108,6 +123,17 @@ export default function App() {
     setScreen('landing')
   }
 
+  const openLegalPage = (page: 'privacy' | 'terms') => {
+    const path = page === 'privacy' ? '/privacy-policy' : '/terms-of-service'
+    window.history.pushState({}, '', path)
+    setScreen(page)
+  }
+
+  const returnToLanding = () => {
+    window.history.pushState({}, '', '/')
+    setScreen('landing')
+  }
+
   if (bootstrapping) {
     return (
       <div className="min-h-screen flex items-center justify-center text-sm text-[var(--muted-foreground)]">
@@ -119,10 +145,19 @@ export default function App() {
   if (screen === 'landing') {
     return (
       <Landing
-        onGetStarted={() => setScreen('onboarding')}
+        onGetStarted={(email, startSignup = false) => {
+          setSignupEmail(email ?? '')
+          setStartSignupAtForm(startSignup)
+          setScreen('onboarding')
+        }}
         onSignIn={() => setScreen('signin')}
+        onViewLegal={openLegalPage}
       />
     )
+  }
+
+  if (screen === 'privacy' || screen === 'terms') {
+    return <LegalPage document={screen} onBack={returnToLanding} />
   }
 
   if (screen === 'signin') {
@@ -140,12 +175,13 @@ export default function App() {
       <Onboarding
         onComplete={handleAuthSuccess}
         onSignIn={() => setScreen('signin')}
+        initialEmail={signupEmail}
+        startAtSignup={startSignupAtForm}
       />
     )
   }
 
-  const farmLabel =
-    user?.farm_name || (user?.first_name ? `${user.first_name}'s Farm` : 'My Farm')
+  const farmLabel = user?.farm_name
 
   return (
     <div className="min-h-screen bg-[var(--background)]">
@@ -156,8 +192,7 @@ export default function App() {
           <div>
             <h2 className="font-semibold capitalize">{activeTab}</h2>
             <p className="text-xs text-[var(--muted-foreground)]">
-              {farmLabel}
-              {user?.location ? ` · ${user.location}` : ''}
+              {[farmLabel, user?.location].filter(Boolean).join(' · ') || 'Account'}
             </p>
           </div>
           <button onClick={handleSignOut} className="text-xs text-[var(--muted-foreground)]">
@@ -170,16 +205,21 @@ export default function App() {
         <div className="max-w-6xl mx-auto px-4 md:px-6 py-4">
           {activeTab === 'dashboard' && (
             <Dashboard
+              user={user}
               onAddStation={() => setShowStationModal(true)}
               onNavigate={setActiveTab}
-              onShowNotifications={() => undefined}
             />
           )}
-          {activeTab === 'weather' && <Weather />}
-          {activeTab === 'insights' && <Insights />}
+          {activeTab === 'weather' && <Weather user={user} />}
+          {activeTab === 'insights' && <Insights user={user} />}
           {activeTab === 'calendar' && <CalendarView />}
           {activeTab === 'profile' && (
-            <Profile onAddStation={() => setShowStationModal(true)} onLogout={handleSignOut} />
+            <Profile
+              user={user}
+              onUserUpdate={setUser}
+              onAddStation={() => setShowStationModal(true)}
+              onLogout={handleSignOut}
+            />
           )}
         </div>
       </main>

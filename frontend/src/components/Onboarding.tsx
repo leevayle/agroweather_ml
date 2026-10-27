@@ -4,6 +4,8 @@ import { signup } from '../lib/api'
 interface OnboardingProps {
   onComplete: () => void
   onSignIn?: () => void
+  initialEmail?: string
+  startAtSignup?: boolean
 }
 
 const CROPS = [
@@ -11,11 +13,16 @@ const CROPS = [
   'Tomatoes', 'Potatoes', 'Sunflower', 'Barley', 'Canola',
 ]
 
-export default function Onboarding({ onComplete, onSignIn }: OnboardingProps) {
-  const [step, setStep] = useState(0)
+export default function Onboarding({
+  onComplete,
+  onSignIn,
+  initialEmail = '',
+  startAtSignup = false,
+}: OnboardingProps) {
+  const [step, setStep] = useState(startAtSignup ? 1 : 0)
   const [form, setForm] = useState({
     firstName: '',
-    email: '',
+    email: initialEmail,
     password: '',
     farmName: '',
     location: '',
@@ -86,7 +93,11 @@ export default function Onboarding({ onComplete, onSignIn }: OnboardingProps) {
 
           {step === 0 && (
             <div className="text-center">
-              <div className="text-5xl mb-6">🌱</div>
+              <img
+                src="/logo.webp"
+                alt="AgroWeather"
+                className="w-16 h-16 object-contain mx-auto mb-6"
+              />
               <h2 className="text-2xl font-bold mb-2">Let's set up your farm</h2>
               <p className="text-sm text-[var(--muted-foreground)] mb-8">
                 Create an account so your data stays saved in MongoDB.
@@ -108,6 +119,8 @@ export default function Onboarding({ onComplete, onSignIn }: OnboardingProps) {
               <h2 className="text-2xl font-bold mb-6">Create your account</h2>
               <div className="space-y-4">
                 <input
+                  autoFocus
+                  autoComplete="given-name"
                   placeholder="First name"
                   value={form.firstName}
                   onChange={(e) => setForm((f) => ({ ...f, firstName: e.target.value }))}
@@ -115,6 +128,7 @@ export default function Onboarding({ onComplete, onSignIn }: OnboardingProps) {
                 />
                 <input
                   type="email"
+                  autoComplete="email"
                   placeholder="Email"
                   value={form.email}
                   onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}

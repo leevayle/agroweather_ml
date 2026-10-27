@@ -93,16 +93,6 @@ export default function Sidebar({ active, onChange }: SidebarProps) {
         ))}
       </nav>
 
-      {/* Station status */}
-      <div className="px-4 py-4 border-t border-[var(--border)]">
-        <div className="bg-[var(--secondary)] rounded-xl p-3">
-          <div className="flex items-center gap-2 mb-2">
-            <div className="w-2 h-2 rounded-full bg-[var(--success)] animate-pulse" />
-            <span className="text-xs font-semibold text-[var(--primary)]">3 stations live</span>
-          </div>
-          <p className="text-xs text-[var(--muted-foreground)]">Last reading 2 min ago</p>
-        </div>
-      </div>
     </aside>
   )
 }

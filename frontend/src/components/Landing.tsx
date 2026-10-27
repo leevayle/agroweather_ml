@@ -1,17 +1,24 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
 import {
   displayValue,
   fetchCurrentWeather,
+  sendContactMessage,
   type CurrentWeatherData,
 } from '../lib/api'
 
+type LegalDocument = 'privacy' | 'terms'
+
 interface LandingProps {
-  onGetStarted: () => void
+  onGetStarted: (email?: string, startSignup?: boolean) => void
   onSignIn: () => void
+  onViewLegal: (document: LegalDocument) => void
 }
 
-export default function Landing({ onGetStarted, onSignIn }: LandingProps) {
+export default function Landing({ onGetStarted, onSignIn, onViewLegal }: LandingProps) {
   const [email, setEmail] = useState('')
+  const [contact, setContact] = useState({ name: '', email: '', phone: '', message: '' })
+  const [contactStatus, setContactStatus] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle')
+  const [contactError, setContactError] = useState('')
   const [weather, setWeather] = useState<CurrentWeatherData | null>(null)
   const [weatherStatus, setWeatherStatus] = useState('loading')
   const [weatherTimestamp, setWeatherTimestamp] = useState<string | null>(null)
@@ -44,6 +51,21 @@ export default function Landing({ onGetStarted, onSignIn }: LandingProps) {
       window.clearInterval(refresh)
     }
   }, [])
+
+  const submitContact = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    setContactStatus('sending')
+    setContactError('')
+
+    try {
+      await sendContactMessage(contact)
+      setContactStatus('sent')
+      setContact({ name: '', email: '', phone: '', message: '' })
+    } catch (error) {
+      setContactStatus('error')
+      setContactError(error instanceof Error ? error.message : 'Unable to send your message.')
+    }
+  }
 
   const features = [
     {
@@ -129,7 +151,7 @@ export default function Landing({ onGetStarted, onSignIn }: LandingProps) {
               Sign in
             </button>
             <button
-              onClick={onGetStarted}
+              onClick={() => onGetStarted()}
               className="text-sm font-semibold bg-[var(--primary)] text-[var(--primary-foreground)] px-4 py-2 rounded-xl hover:bg-[var(--primary-hover)] transition-colors"
             >
               Get started
@@ -164,7 +186,7 @@ export default function Landing({ onGetStarted, onSignIn }: LandingProps) {
             </p>
             <div className="flex flex-col sm:flex-row gap-3">
               <button
-                onClick={onGetStarted}
+                onClick={() => onGetStarted()}
                 className="inline-flex items-center justify-center gap-2 bg-[var(--primary)] text-[var(--primary-foreground)] font-semibold px-8 py-3.5 rounded-xl hover:bg-[var(--primary-hover)] transition-all hover:shadow-lg hover:shadow-[var(--primary)]/20 text-base"
               >
                 Start free — takes 90 seconds
@@ -304,7 +326,7 @@ export default function Landing({ onGetStarted, onSignIn }: LandingProps) {
           </div>
           <div className="mt-12">
             <button
-              onClick={onGetStarted}
+              onClick={() => onGetStarted()}
               className="inline-flex items-center gap-2 bg-[var(--accent)] text-[var(--primary-foreground)] font-semibold px-8 py-3.5 rounded-xl hover:bg-[var(--accent-hover)] transition-colors text-base"
             >
               Set up your farm now →
@@ -363,11 +385,101 @@ export default function Landing({ onGetStarted, onSignIn }: LandingProps) {
               className="flex-1 px-4 py-3 rounded-xl border border-[var(--border)] bg-[var(--background)] text-sm text-[var(--foreground)] outline-none focus:border-[var(--primary)] transition-colors"
             />
             <button
-              onClick={onGetStarted}
+              onClick={() => onGetStarted(email.trim(), true)}
               className="bg-[var(--primary)] text-[var(--primary-foreground)] font-semibold px-6 py-3 rounded-xl hover:bg-[var(--primary-hover)] transition-colors whitespace-nowrap text-sm"
             >
               Get started free
             </button>
+          </div>
+        </div>
+      </section>
+
+      {/* Contact */}
+      <section id="contact" className="py-16 scroll-mt-20">
+        <div className="max-w-4xl mx-auto px-6">
+          <div className="rounded-2xl bg-[var(--secondary)] p-8 md:p-10">
+            <div className="max-w-2xl mb-7">
+              <p className="text-xs font-semibold text-[var(--primary)] uppercase tracking-widest mb-3">
+                Contact
+              </p>
+              <h2 className="text-3xl font-bold text-[var(--foreground)] mb-2">
+                We&apos;re here to help
+              </h2>
+              <p className="text-sm text-[var(--muted-foreground)]">
+                Questions about AgroWeather, your account, or your data? Send us a message.
+              </p>
+            </div>
+            <form onSubmit={submitContact} className="grid gap-4 md:grid-cols-2">
+              <label className="text-sm font-medium text-[var(--foreground)]">
+                Name
+                <input
+                  required
+                  maxLength={120}
+                  autoComplete="name"
+                  value={contact.name}
+                  onChange={event => setContact(current => ({ ...current, name: event.target.value }))}
+                  className="mt-1.5 w-full rounded-xl border border-[var(--border)] bg-[var(--background)] px-4 py-3 text-sm"
+                  disabled={contactStatus === 'sending'}
+                />
+              </label>
+              <label className="text-sm font-medium text-[var(--foreground)]">
+                Email
+                <input
+                  required
+                  type="email"
+                  maxLength={254}
+                  autoComplete="email"
+                  value={contact.email}
+                  onChange={event => setContact(current => ({ ...current, email: event.target.value }))}
+                  className="mt-1.5 w-full rounded-xl border border-[var(--border)] bg-[var(--background)] px-4 py-3 text-sm"
+                  disabled={contactStatus === 'sending'}
+                />
+              </label>
+              <label className="text-sm font-medium text-[var(--foreground)] md:col-span-2">
+                Phone <span className="font-normal text-[var(--muted-foreground)]">(optional)</span>
+                <input
+                  type="tel"
+                  maxLength={40}
+                  autoComplete="tel"
+                  value={contact.phone}
+                  onChange={event => setContact(current => ({ ...current, phone: event.target.value }))}
+                  className="mt-1.5 w-full rounded-xl border border-[var(--border)] bg-[var(--background)] px-4 py-3 text-sm"
+                  disabled={contactStatus === 'sending'}
+                />
+              </label>
+              <label className="text-sm font-medium text-[var(--foreground)] md:col-span-2">
+                Message
+                <textarea
+                  required
+                  minLength={1}
+                  maxLength={5000}
+                  rows={5}
+                  value={contact.message}
+                  onChange={event => setContact(current => ({ ...current, message: event.target.value }))}
+                  className="mt-1.5 w-full resize-y rounded-xl border border-[var(--border)] bg-[var(--background)] px-4 py-3 text-sm"
+                  disabled={contactStatus === 'sending'}
+                />
+              </label>
+              {contactStatus === 'sent' && (
+                <p role="status" className="text-sm text-[var(--primary)] md:col-span-2">
+                  Your message has been sent. Thank you for contacting us.
+                </p>
+              )}
+              {contactStatus === 'error' && (
+                <p role="alert" className="text-sm text-[var(--danger-strong)] md:col-span-2">
+                  {contactError}
+                </p>
+              )}
+              <div className="md:col-span-2">
+                <button
+                  type="submit"
+                  disabled={contactStatus === 'sending'}
+                  className="rounded-xl bg-[var(--primary)] px-6 py-3 text-sm font-semibold text-[var(--primary-foreground)] hover:bg-[var(--primary-hover)] disabled:opacity-60 transition-colors"
+                >
+                  {contactStatus === 'sending' ? 'Sending…' : 'Send message'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       </section>
@@ -383,9 +495,9 @@ export default function Landing({ onGetStarted, onSignIn }: LandingProps) {
           </div>
           <p className="text-xs text-[var(--muted-foreground)]">© 2026 AgroWeather. Built for farmers, by experts.</p>
           <div className="flex gap-6 text-xs text-[var(--muted-foreground)]">
-            <a href="#" className="hover:text-[var(--primary)] transition-colors">Privacy</a>
-            <a href="#" className="hover:text-[var(--primary)] transition-colors">Terms</a>
-            <a href="#" className="hover:text-[var(--primary)] transition-colors">Contact</a>
+            <button type="button" onClick={() => onViewLegal('privacy')} className="hover:text-[var(--primary)] transition-colors">Privacy Policy</button>
+            <button type="button" onClick={() => onViewLegal('terms')} className="hover:text-[var(--primary)] transition-colors">Terms of Service</button>
+            <a href="#contact" className="hover:text-[var(--primary)] transition-colors">Contact</a>
           </div>
         </div>
       </footer>

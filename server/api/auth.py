@@ -11,6 +11,7 @@ from server.services.auth_service import (
     find_user_by_id,
     register_user,
     serialize_user,
+    update_user_crops,
 )
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
@@ -31,6 +32,10 @@ class SignupRequest(BaseModel):
 class LoginRequest(BaseModel):
     email: EmailStr
     password: str
+
+
+class CropListUpdateRequest(BaseModel):
+    crops: List[str] = Field(default_factory=list)
 
 
 class AuthResponse(BaseModel):
@@ -90,3 +95,20 @@ def login(body: LoginRequest):
 @router.get("/me")
 def me(current_user=Depends(get_current_user)):
     return serialize_user(current_user)
+
+
+@router.put("/me/crops")
+def update_my_crops(
+    body: CropListUpdateRequest,
+    current_user=Depends(get_current_user),
+):
+    crops = [crop.strip() for crop in body.crops]
+    if any(not crop for crop in crops):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Crop names cannot be empty.",
+        )
+
+    unique_crops = list({crop.casefold(): crop for crop in crops}.values())
+    updated_user = update_user_crops(current_user, unique_crops)
+    return serialize_user(updated_user)
