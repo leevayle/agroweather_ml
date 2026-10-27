@@ -8,3 +8,7 @@ joblib
 pandas
 numpy
 scikit-learn
+passlib[bcrypt]
+python-jose[cryptography]
+email-validator
+bcrypt

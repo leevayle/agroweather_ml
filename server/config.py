@@ -93,6 +93,25 @@ MQTT_CLIENT_ID = os.getenv(
 
 
 # ============================================================
+# AUTH / JWT
+# ============================================================
+
+JWT_SECRET = os.getenv(
+    "JWT_SECRET",
+    "agroweather-dev-secret-change-me",
+)
+
+JWT_ALGORITHM = os.getenv(
+    "JWT_ALGORITHM",
+    "HS256",
+)
+
+JWT_EXPIRE_MINUTES = int(
+    os.getenv("JWT_EXPIRE_MINUTES", "10080")
+)
+
+
+# ============================================================
 # MACHINE LEARNING
 # ============================================================
 

@@ -21,6 +21,9 @@ from server.services.forecast_service import (
     initialize_forecast_cache,
 )
 
+from server.api.auth import router as auth_router
+
+
 
 # ============================================================
 # MQTT
@@ -130,6 +133,8 @@ app.add_middleware(
 app.include_router(weather_router)
 
 app.include_router(forecast_router)
+
+app.include_router(auth_router)
 
 
 # ============================================================
