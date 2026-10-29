@@ -61,6 +61,7 @@ def _crop_insight_context(current_user) -> dict:
         or user.get("station_code")
         or "station_01"
     )
+    today = datetime.now(timezone.utc).date()
     history_start = datetime.now(timezone.utc) - timedelta(days=7)
     historical_weather = []
     try:
@@ -93,11 +94,13 @@ def _crop_insight_context(current_user) -> dict:
     forecast = []
     if cache["ready"] and cache["start_date"] and cache["end_date"]:
         cache_start = date.fromisoformat(cache["start_date"])
-        cache_end = min(
+        forecast_start = max(today, cache_start)
+        forecast_end = min(
+            today + timedelta(days=6),
             date.fromisoformat(cache["end_date"]),
-            cache_start + timedelta(days=6),
         )
-        forecast = get_cached_forecast(cache_start, cache_end) or []
+        if forecast_start <= forecast_end:
+            forecast = get_cached_forecast(forecast_start, forecast_end) or []
 
     current_weather = None
     if current:
@@ -127,6 +130,10 @@ def _crop_insight_context(current_user) -> dict:
         "recent_historical_weather_last_7_days": historical_weather,
         "current_weather": current_weather,
         "forecast_next_7_days": forecast,
+        "planning_window": {
+            "start": today.isoformat(),
+            "end": (today + timedelta(days=6)).isoformat(),
+        },
     }
 
 

@@ -1,5 +1,6 @@
 import json
 import re
+from datetime import date, datetime, timedelta, timezone
 from http.client import HTTPResponse
 from time import sleep
 from typing import Any, Dict, Iterator, List, Tuple
@@ -223,11 +224,47 @@ def generate_crop_insights(farm_context: Dict[str, Any]) -> List[Dict[str, Any]]
     if not crops:
         return []
 
+    planning_window = farm_context.get("planning_window")
+    if isinstance(planning_window, dict):
+        try:
+            window_start = date.fromisoformat(str(planning_window["start"]))
+            window_end = date.fromisoformat(str(planning_window["end"]))
+        except (KeyError, ValueError) as exc:
+            raise ChatProviderError(
+                "Crop insights are temporarily unavailable. Please try again later.",
+                diagnostic="Crop insight planning window was invalid.",
+            ) from exc
+        if window_end < window_start:
+            raise ChatProviderError(
+                "Crop insights are temporarily unavailable. Please try again later.",
+                diagnostic="Crop insight planning window ended before it started.",
+            )
+    else:
+        window_start = datetime.now(timezone.utc).date()
+        window_end = window_start + timedelta(days=6)
+
+    def contains_out_of_window_date(value: str) -> bool:
+        for date_value in re.findall(r"(?<!\d)\d{4}-\d{2}-\d{2}(?!\d)", value):
+            try:
+                parsed_date = date.fromisoformat(date_value)
+            except ValueError:
+                return True
+            if not window_start <= parsed_date <= window_end:
+                return True
+        return False
+
     prompt = (
         "Create a practical, crop-specific farm brief using the supplied "
         "farm context. Consider the recent historical weather, current "
         "station reading, and each available day in the next seven-day "
-        "forecast. Use the location and each saved crop.\n\n"
+        "forecast. Use the location and each saved crop. Schedule every "
+        "recommended activity within the inclusive planning window "
+        f"{window_start.isoformat()} through {window_end.isoformat()}. "
+        "Never recommend an activity for a date before or after that window. "
+        "If including a calendar date in timing, use YYYY-MM-DD format and "
+        "only a date within that window. Otherwise use a relative time or "
+        "weather window that also falls within it. Do not include calendar "
+        "dates outside this window in any field or invent dates.\n\n"
         "Return only one valid JSON object, with no Markdown fences or "
         "extra text, in exactly this shape:\n"
         '{"insights":[{"crop":"crop name","headline":"short summary",'
@@ -286,6 +323,8 @@ def generate_crop_insights(farm_context: Dict[str, Any]) -> List[Dict[str, Any]]
                     for key in ("activity", "timing", "reason")
                 }
                 if all(isinstance(value, str) and value.strip() for value in fields.values()):
+                    if any(contains_out_of_window_date(value) for value in fields.values()):
+                        continue
                     normalized_activities.append(
                         {key: value.strip()[:500] for key, value in fields.items()}
                     )
@@ -296,6 +335,11 @@ def generate_crop_insights(farm_context: Dict[str, Any]) -> List[Dict[str, Any]]
         if (
             not normalized_activities
             or not all(isinstance(value, str) and value.strip() for value in text_fields.values())
+            or any(
+                contains_out_of_window_date(value)
+                for value in text_fields.values()
+                if isinstance(value, str)
+            )
         ):
             continue
         crop_key = crop.casefold()

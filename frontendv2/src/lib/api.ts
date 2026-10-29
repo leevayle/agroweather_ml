@@ -53,7 +53,7 @@ function getHttpErrorMessage(path: string, status: number): string {
     return isInsights
       ? 'Crop insights are temporarily unavailable. Please try again later.'
       : isCalendar
-      ? 'We couldn’t add this task to your calendar. Please try again.'
+      ? 'Your calendar couldn’t be updated. Please try again.'
       : isChat
       ? 'The farm assistant is temporarily unavailable. Please try again later.'
       : isWeather
@@ -63,7 +63,7 @@ function getHttpErrorMessage(path: string, status: number): string {
   return isInsights
     ? 'Crop insights couldn’t be loaded. Please try again.'
     : isCalendar
-    ? 'We couldn’t add this task to your calendar. Please try again.'
+    ? 'Your calendar couldn’t be updated. Please try again.'
     : isChat
     ? 'The farm assistant couldn’t reply. Please try again.'
     : isWeather
@@ -158,6 +158,18 @@ export interface CropInsight {
 export interface CalendarTaskResponse {
   message: string
   created: boolean
+  task: CalendarTask | null
+}
+
+export interface CalendarTask {
+  id: string
+  crop: string
+  activity: string
+  timing: string
+  reason: string
+  date: string | null
+  status: 'planned' | 'completed'
+  created_at: string | null
 }
 
 function getToken(): string | null {
@@ -294,6 +306,30 @@ export async function addCalendarTask(task: {
   return requestJson<CalendarTaskResponse>('/calendar/tasks', {
     method: 'POST',
     body: JSON.stringify(task),
+  })
+}
+
+export async function fetchCalendarTasks(start: string, end: string): Promise<CalendarTask[]> {
+  const result = await requestJson<{ tasks: CalendarTask[] }>(
+    `/calendar/tasks?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`,
+  )
+  return result.tasks
+}
+
+export async function updateCalendarTask(
+  taskId: string,
+  changes: Partial<Pick<CalendarTask, 'crop' | 'activity' | 'reason' | 'date' | 'status'>>,
+): Promise<CalendarTask> {
+  const result = await requestJson<{ task: CalendarTask }>(`/calendar/tasks/${encodeURIComponent(taskId)}`, {
+    method: 'PATCH',
+    body: JSON.stringify(changes),
+  })
+  return result.task
+}
+
+export async function deleteCalendarTask(taskId: string): Promise<void> {
+  await requestJson<{ deleted: boolean }>(`/calendar/tasks/${encodeURIComponent(taskId)}`, {
+    method: 'DELETE',
   })
 }
 

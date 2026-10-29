@@ -251,14 +251,27 @@ input:focus, select:focus, textarea:focus { border-color: #86a486; box-shadow: 0
 
 .select-control { min-width: 210px; height: 44px; border: 1px solid var(--line); border-radius: 11px; background: white; display: flex; grid: none; flex-direction: row; align-items: center; gap: 7px; padding-left: 12px; }
 .select-control select { border: 0; height: 40px; box-shadow: none; padding-left: 2px; }
-.weather-hero { min-height: 300px; padding: 30px 34px; background: var(--forest); border-radius: 18px; color: white; display: grid; grid-template-columns: 1fr 1.3fr .7fr; align-items: center; }
-.weather-hero > div:first-child h2 { margin-top: 18px; font-size: 18px; }
-.weather-hero > div:first-child p { margin-top: 6px; color: #aebdaa; font-size: 11px; }
-.weather-display { display: flex; align-items: center; gap: 20px; color: #efc264; }
-.weather-display > strong { color: white; font-size: 72px; letter-spacing: -.07em; font-weight: 500; }
-.weather-display > strong span { font-size: 25px; vertical-align: top; }
-.weather-display div { display: grid; gap: 5px; color: white; }
-.weather-display div span, .weather-display div small { color: #b9c7b6; font-size: 11px; }
+.weather-hero { position: relative; min-height: 330px; overflow: hidden; padding: 22px 30px 28px; border: 1px solid rgba(255,255,255,.08); border-radius: 22px; background: radial-gradient(ellipse at 18% 55%, rgba(120,147,59,.22), transparent 34%), linear-gradient(120deg, #173629, #193b2e 62%, #18372b); color: white; box-shadow: 0 18px 42px rgba(27,54,39,.14); }
+.weather-hero::after { position: absolute; right: 28%; bottom: -180px; width: 420px; height: 300px; border-radius: 50%; background: rgba(224,175,71,.045); content: ''; filter: blur(35px); pointer-events: none; }
+.weather-hero-top { position: relative; z-index: 1; display: flex; align-items: center; justify-content: space-between; gap: 14px; min-height: 38px; padding-bottom: 14px; border-bottom: 1px solid rgba(255,255,255,.12); }
+.weather-live-pill { display: inline-flex; align-items: center; gap: 8px; padding: 7px 12px; border: 1px solid rgba(255,255,255,.12); border-radius: 99px; background: rgba(255,255,255,.07); color: #e4ede5; font-size: 11px; font-weight: 600; }
+.weather-live-pill i { width: 7px; height: 7px; border-radius: 50%; background: #d3a84f; box-shadow: 0 0 0 4px rgba(211,168,79,.14); }
+.weather-live-pill.is-live i { background: #81ca99; box-shadow: 0 0 0 4px rgba(129,202,153,.14); }
+.weather-updated { color: #bac9be; font-size: 11px; }
+.weather-hero-main { position: relative; z-index: 1; min-height: 245px; display: flex; align-items: center; justify-content: space-between; gap: 32px; padding: 28px 8px 8px; }
+.weather-display { min-width: 0; display: flex; align-items: center; gap: 18px; color: #efc264; }
+.weather-condition-icon { display: grid; place-items: center; color: #efc264; filter: drop-shadow(0 5px 15px rgba(239,194,100,.18)); }
+.weather-condition-icon.cloud { color: #d8e6e5; }
+.weather-condition-icon.rain { color: #91c6d9; }
+.weather-display > strong { color: #fffdf6; font-size: clamp(76px, 9vw, 112px); letter-spacing: -.085em; line-height: .95; font-weight: 400; }
+.weather-display > strong span { margin-left: 5px; color: #dbe5db; font-size: 27px; letter-spacing: -.03em; vertical-align: top; }
+.weather-condition-copy { display: grid; gap: 6px; margin-left: 2px; color: white; }
+.weather-condition-copy b { font-size: 15px; font-weight: 600; text-transform: capitalize; }
+.weather-condition-copy span { color: #c0cec1; font-size: 12px; text-transform: capitalize; }
+.weather-location { min-width: 225px; padding: 4px 0 4px 30px; border-left: 1px solid rgba(255,255,255,.16); text-align: right; }
+.weather-location > span { color: #a9bcad; font-size: 10px; font-weight: 700; letter-spacing: .13em; text-transform: uppercase; }
+.weather-location h2 { margin-top: 7px; color: #fffdf6; font-family: Georgia, 'Times New Roman', serif; font-size: clamp(24px, 3vw, 36px); font-weight: 500; letter-spacing: -.035em; }
+.weather-location p { margin-top: 5px; color: #c2cec4; font-size: 13px; }
 .sun-times { border-left: 1px solid rgba(255,255,255,.15); padding-left: 35px; display: grid; gap: 22px; }
 .sun-times > span { display: grid; grid-template-columns: 30px 1fr; align-items: center; }
 .sun-times svg { grid-row: span 2; color: #efc264; }
@@ -266,6 +279,30 @@ input:focus, select:focus, textarea:focus { border-color: #86a486; box-shadow: 0
 .sun-times strong { font-size: 12px; margin-top: 3px; }
 .metric-grid { display: grid; grid-template-columns: repeat(4,1fr); gap: 12px; margin-top: 16px; }
 .metric-card { min-height: 104px; padding: 18px; border: 1px solid var(--line); border-radius: 14px; background: white; display: grid; grid-template-columns: 42px 1fr; align-items: center; gap: 12px; position: relative; }
+.weather-metric-grid { gap: 14px; margin-top: 14px; }
+.weather-metric-card { min-height: 126px; grid-template-columns: 42px minmax(0, 1fr) auto; gap: 12px; overflow: hidden; padding: 18px; border-color: #e9e5db; border-radius: 17px; background: linear-gradient(145deg, #fffdfa, #fff 70%); box-shadow: 0 7px 20px rgba(37,47,35,.035); }
+.metric-icon { width: 42px; height: 42px; display: grid; place-items: center; border-radius: 13px; background: #eaf3ec; color: #315d46; }
+.metric-copy { min-width: 0; display: grid; gap: 4px; }
+.metric-copy small { color: #70796f; font-size: 11px; font-weight: 500; }
+.metric-copy strong { display: flex; align-items: baseline; color: #23332a; font-size: 23px; line-height: 1.1; font-weight: 650; letter-spacing: -.045em; }
+.metric-copy strong em { margin-left: 4px; color: #68756b; font-size: 11px; font-style: normal; font-weight: 500; letter-spacing: 0; }
+.metric-copy > span { overflow: hidden; color: #92988f; font-size: 9px; line-height: 1.35; text-overflow: ellipsis; white-space: nowrap; }
+.humidity-ring { position: relative; width: 44px; height: 44px; display: grid; place-items: center; border-radius: 50%; }
+.humidity-ring::before { position: absolute; inset: 5px; border-radius: inherit; background: #fffdfa; content: ''; }
+.humidity-ring span { position: relative; color: #49624e; font-size: 9px; font-weight: 700; }
+.metric-gauge { grid-column: 2 / -1; height: 5px; align-self: end; overflow: hidden; border-radius: 99px; background: #eaf0e9; }
+.metric-gauge span { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #8eae84, #315d46); transition: width .3s ease; }
+.wind-compass { position: relative; width: 82px; height: 82px; display: grid; flex: none; place-items: center; border: 1px solid #dce8df; border-radius: 50%; background: radial-gradient(circle, #f8fbf8 0 52%, #e8f0e9 53% 56%, #fff 57%); color: #52705a; }
+.wind-compass > span { position: absolute; z-index: 1; font-size: 7px; font-weight: 700; line-height: 1; }
+.compass-north { top: 4px; }
+.compass-east { right: 5px; }
+.compass-south { bottom: 4px; }
+.compass-west { left: 5px; }
+.compass-pointer { position: absolute; z-index: 2; top: 50%; left: 50%; width: 20px; height: 27px; overflow: visible; transform: translate(-50%, -80%) rotate(var(--direction-angle, 0deg)); transform-origin: 50% 80%; }
+.compass-pointer path { fill: #315d46; }
+.rainfall-dashes { grid-column: 2 / -1; display: flex; align-items: center; gap: 5px; height: 10px; }
+.rainfall-dashes i { flex: 1; height: 3px; border-radius: 99px; background: #d7e8e1; }
+.rainfall-dashes i:nth-child(2n) { background: #b9d7d0; }
 .metric-card small, .metric-card strong { display: block; }
 .metric-card small { color: var(--muted); font-size: 9px; }
 .metric-card strong { margin-top: 5px; font-size: 19px; }
@@ -366,6 +403,96 @@ input:focus, select:focus, textarea:focus { border-color: #86a486; box-shadow: 0
 .calendar-toast button { display: grid; place-items: center; width: 26px; height: 26px; border: 0; border-radius: 7px; background: transparent; color: inherit; opacity: .7; }
 .calendar-toast button:hover { background: rgba(0,0,0,.05); opacity: 1; }
 @keyframes toast-enter { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
+.calendar-page { padding-bottom: 60px; }
+.calendar-layout { display: grid; grid-template-columns: minmax(0, 3fr) minmax(240px, 1fr); align-items: start; gap: 18px; }
+.calendar-board { height: min(50vh, 560px); min-height: min(320px, 50vh); display: flex; flex-direction: column; overflow: hidden; padding: 20px; }
+.calendar-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 20px; margin-bottom: 22px; }
+.calendar-period h2 { color: var(--ink); font-size: 22px; font-weight: 600; letter-spacing: -.035em; }
+.calendar-period p { margin-top: 5px; color: var(--muted); font-size: 12px; }
+.calendar-controls { display: flex; align-items: center; gap: 8px; }
+.calendar-view-switch { display: flex; gap: 3px; padding: 4px; border: 1px solid var(--line); border-radius: 11px; background: #f5f4f0; }
+.calendar-view-switch button { min-width: 62px; height: 32px; border: 0; border-radius: 8px; background: transparent; color: var(--muted); font-size: 12px; font-weight: 500; }
+.calendar-view-switch button.active { background: white; color: var(--forest); box-shadow: 0 1px 4px rgba(34,40,31,.1); font-weight: 600; }
+.calendar-today-button, .calendar-nav-button { height: 40px; border: 1px solid var(--line); border-radius: 10px; background: white; color: var(--ink); }
+.calendar-today-button { padding: 0 12px; font-size: 12px; font-weight: 600; }
+.calendar-nav-button { width: 40px; display: grid; place-items: center; color: #62685e; }
+.calendar-nav-button.previous svg { transform: rotate(180deg); }
+.calendar-today-button:hover, .calendar-nav-button:hover { border-color: #b7c8b3; background: #f8faf6; }
+.calendar-grid { flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); grid-auto-rows: minmax(0, 1fr); overflow: hidden; border: 1px solid var(--line); border-radius: 13px; }
+.calendar-weekday { min-height: 34px; display: grid; place-items: center; border-bottom: 1px solid var(--line); color: var(--muted); font-size: 11px; font-weight: 600; }
+.calendar-day { position: relative; min-width: 0; min-height: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 3px; padding: 5px 7px; border: 0; border-right: 1px solid #eeebe5; border-bottom: 1px solid #eeebe5; background: rgba(255,255,255,.62); color: var(--ink); text-align: left; transition: background .15s ease; }
+.calendar-day:nth-child(7n) { border-right: 0; }
+.calendar-day:hover { background: #f5f8f2; }
+.calendar-day.outside-month { background: #f8f7f4; color: #a0a49d; }
+.calendar-day.selected { z-index: 1; background: #edf4e9; box-shadow: inset 0 0 0 1px #b7cbb2; }
+.calendar-day.today .calendar-day-number { color: white; background: var(--forest); }
+.calendar-day-number { width: 24px; height: 24px; display: grid; place-items: center; border-radius: 50%; font-size: 12px; font-weight: 500; }
+.calendar-day-activity { width: 100%; display: grid; grid-template-columns: repeat(3, 1fr); align-items: center; gap: 4px; }
+.calendar-day-activity i { height: 4px; border-radius: 99px; background: #698b68; }
+.calendar-day-activity i:nth-child(2) { background: #7aaed0; }
+.calendar-day-activity i.done { background: #b5b4aa; }
+.calendar-day-activity small { min-width: 0; grid-column: 1 / -1; overflow: hidden; padding: 2px 4px; border-radius: 4px; background: #edf4e9; color: var(--forest); font-size: 9px; line-height: 1.25; text-overflow: ellipsis; white-space: nowrap; }
+.calendar-grid.week .calendar-day { min-height: 0; }
+.calendar-legend { min-height: 46px; display: flex; align-items: flex-end; gap: 18px; color: var(--muted); font-size: 10px; }
+.calendar-legend > span:not(.calendar-loading) { display: inline-flex; align-items: center; gap: 6px; }
+.calendar-legend i { width: 8px; height: 8px; border-radius: 50%; background: #698b68; }
+.calendar-legend i.completed { background: #b5b4aa; }
+.calendar-loading { display: inline-flex; align-items: center; gap: 7px; margin-left: auto; }
+.calendar-load-error { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin: 0 0 15px; padding: 12px 14px; border: 1px solid #ecd1ce; border-radius: 10px; background: #fff7f6; color: #914842; }
+.calendar-load-error p { font-size: 12px; }
+.calendar-load-error button { border: 0; background: transparent; color: inherit; font-size: 12px; font-weight: 600; }
+.calendar-upcoming { max-height: min(50vh, 560px); min-height: min(260px, 50vh); overflow: auto; padding: 20px; }
+.calendar-upcoming-heading { margin-bottom: 17px; }
+.calendar-upcoming-heading .eyebrow { display: inline-flex; align-items: center; gap: 6px; }
+.calendar-upcoming-heading h2 { margin-top: 8px; font-size: 19px; letter-spacing: -.03em; }
+.calendar-upcoming-heading p { margin-top: 5px; color: var(--muted); font-size: 12px; line-height: 1.5; }
+.calendar-upcoming-list { display: grid; gap: 8px; }
+.calendar-upcoming-task { width: 100%; min-width: 0; display: flex; align-items: center; gap: 10px; padding: 10px 8px; border: 1px solid transparent; border-radius: 11px; background: #fafaf7; color: var(--ink); text-align: left; transition: border-color .15s ease, background .15s ease; }
+.calendar-upcoming-task:hover { border-color: #dce5d8; background: #f3f7f1; }
+.calendar-upcoming-date { width: 40px; min-width: 40px; display: grid; justify-items: center; padding: 5px 2px; border-radius: 9px; background: #edf4e9; color: var(--forest); }
+.calendar-upcoming-date b { font-size: 14px; line-height: 1.2; }
+.calendar-upcoming-date small { margin-top: 2px; font-size: 9px; font-weight: 600; text-transform: uppercase; }
+.calendar-upcoming-copy { min-width: 0; flex: 1; display: grid; gap: 4px; }
+.calendar-upcoming-copy b { overflow: hidden; font-size: 11px; line-height: 1.4; font-weight: 600; text-overflow: ellipsis; }
+.calendar-upcoming-copy small { overflow: hidden; color: var(--muted); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.calendar-upcoming-task > svg { flex: none; color: #92988d; }
+.calendar-upcoming-empty { display: flex; align-items: center; gap: 11px; min-height: 100px; color: var(--muted); }
+.calendar-upcoming-empty .icon-tile { flex: none; }
+.calendar-upcoming-empty p { font-size: 11px; line-height: 1.5; }
+.calendar-day-section { margin-top: 30px; }
+.calendar-day-heading { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; margin-bottom: 14px; }
+.calendar-day-heading h2 { margin-top: 5px; font-size: 20px; letter-spacing: -.03em; }
+.calendar-day-heading p { margin-top: 5px; color: var(--muted); font-size: 12px; }
+.calendar-task-list { display: grid; gap: 9px; }
+.calendar-task { min-width: 0; display: grid; grid-template-columns: 30px 4px minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 15px 16px; border: 1px solid var(--line); border-radius: 13px; background: white; box-shadow: 0 4px 14px rgba(37,47,35,.025); }
+.calendar-task-check { width: 25px; height: 25px; display: grid; place-items: center; border: 1px solid #d5d9d1; border-radius: 8px; background: white; color: transparent; }
+.calendar-task-check:hover { border-color: #9eb49a; color: var(--forest); }
+.calendar-task.is-completed .calendar-task-check { border-color: var(--forest-2); background: var(--forest-2); color: white; }
+.calendar-task-color { width: 4px; height: 34px; border-radius: 99px; background: #698b68; }
+.calendar-task-copy { min-width: 0; }
+.calendar-task-copy h3 { font-size: 14px; font-weight: 600; line-height: 1.45; }
+.calendar-task.is-completed .calendar-task-copy h3 { color: #858b82; text-decoration: line-through; }
+.calendar-task-meta { display: flex; flex-wrap: wrap; gap: 10px 16px; margin-top: 6px; color: var(--muted); font-size: 11px; }
+.calendar-task-meta span { display: inline-flex; align-items: center; gap: 5px; }
+.calendar-task-meta span:first-child { color: var(--forest-2); }
+.calendar-task-copy p { margin-top: 7px; color: var(--muted); font-size: 12px; line-height: 1.5; }
+.calendar-task-actions { display: flex; gap: 5px; }
+.calendar-task-actions button { width: 34px; height: 34px; display: grid; place-items: center; border: 1px solid transparent; border-radius: 9px; background: transparent; color: #777e74; }
+.calendar-task-actions button:hover:not(:disabled) { border-color: var(--line); background: #f8f8f5; color: var(--forest); }
+.calendar-task-actions button:last-child:hover:not(:disabled) { color: #a44f47; }
+.calendar-task-actions button:disabled, .calendar-task-check:disabled { cursor: wait; opacity: .55; }
+.calendar-empty-day { display: flex; align-items: center; gap: 14px; padding: 22px; border: 1px dashed #d9ddd4; border-radius: 13px; background: rgba(255,255,255,.55); }
+.calendar-empty-day > div { flex: 1; }
+.calendar-empty-day h3 { font-size: 14px; }
+.calendar-empty-day p { margin-top: 4px; color: var(--muted); font-size: 12px; line-height: 1.5; }
+.calendar-unscheduled { margin-top: 30px; }
+.calendar-unscheduled h2 { font-size: 17px; }
+.calendar-unscheduled > div:first-child p { margin: 5px 0 12px; color: var(--muted); font-size: 12px; }
+.calendar-task-modal form { margin-top: 22px; }
+.calendar-task-modal label { font-size: 12px; }
+.calendar-task-modal textarea { min-height: 82px; padding: 11px 13px; resize: vertical; font-size: 13px; line-height: 1.5; }
+.calendar-task-modal .btn { margin-top: 4px; }
+.optional-label { display: inline; color: var(--muted); font-size: 11px; font-weight: 400; }
 .crop-insight-loading, .crop-insight-message { display: flex; align-items: center; gap: 12px; padding: 17px; border: 1px solid var(--line); border-radius: 16px; background: rgba(255,255,255,.78); }
 .crop-insight-loading > div { flex: 1; }
 .crop-insight-loading b { font-size: 11px; }
@@ -479,11 +606,18 @@ input:focus, select:focus, textarea:focus { border-color: #86a486; box-shadow: 0
   .hero-visual { min-height: 440px; }
   .dashboard-grid { grid-template-columns: 1fr; }
   .ai-card { min-height: 240px; }
-  .weather-hero { grid-template-columns: 1fr 1.5fr; }
+  .weather-hero-main { min-height: 220px; }
+  .weather-location { min-width: 185px; padding-left: 22px; }
+  .weather-display { gap: 14px; }
+  .weather-display > strong { font-size: clamp(70px, 9vw, 94px); }
+  .weather-metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .sun-times { display: none; }
   .crop-grid { grid-template-columns: 1fr 1fr; }
   .insight-layout { grid-template-columns: 1fr; }
   .insight-side { display: none; }
+  .calendar-layout { grid-template-columns: minmax(0, 1fr); }
+  .calendar-board { height: min(50vh, 560px); }
+  .calendar-upcoming { min-height: 0; max-height: 270px; }
 }
 
 @media (max-width: 760px) {
@@ -519,15 +653,40 @@ input:focus, select:focus, textarea:focus { border-color: #86a486; box-shadow: 0
   .app-main { padding-left: 0; padding-bottom: 72px; }
   .mobile-header { height: 65px; padding: 0 18px; display: flex; align-items: center; justify-content: space-between; background: var(--cream); border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 15; }
   .mobile-header > button { border: 0; background: none; }
-  .bottom-nav { position: fixed; display: grid; grid-template-columns: repeat(5, 1fr); bottom: 0; left: 0; right: 0; height: 67px; background: rgba(255,255,255,.97); border-top: 1px solid var(--line); z-index: 30; padding-bottom: env(safe-area-inset-bottom); }
+  .bottom-nav { position: fixed; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); bottom: 0; left: 0; right: 0; height: 67px; background: rgba(255,255,255,.97); border-top: 1px solid var(--line); z-index: 30; padding-bottom: env(safe-area-inset-bottom); }
   .bottom-nav button { border: 0; background: none; color: #858a82; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 3px; }
   .bottom-nav button.active { color: var(--forest); }
-  .bottom-nav small { font-size: 8px; }
+  .bottom-nav small { font-size: 7px; }
   .app-content { padding: 26px 16px 42px; }
   .page-header { align-items: flex-start; margin-bottom: 25px; flex-direction: column; }
   .page-header h1 { font-size: 29px; }
   .header-actions { width: 100%; }
   .header-actions .btn { flex: 1; }
+  .calendar-board { height: min(50vh, 430px); min-height: min(300px, 50vh); padding: 14px; }
+  .calendar-toolbar { align-items: flex-start; flex-direction: column; gap: 14px; margin-bottom: 15px; }
+  .calendar-controls { width: 100%; gap: 6px; }
+  .calendar-view-switch { margin-right: auto; }
+  .calendar-today-button { height: 38px; padding-inline: 9px; }
+  .calendar-nav-button { width: 36px; height: 38px; }
+  .calendar-weekday { min-height: 34px; font-size: 9px; }
+  .calendar-day { min-height: 0; gap: 5px; padding: 5px 3px; align-items: center; }
+  .calendar-day-number { width: 24px; height: 24px; font-size: 10px; }
+  .calendar-day-activity { width: 90%; display: flex; justify-content: center; gap: 3px; }
+  .calendar-day-activity i { width: 5px; height: 5px; }
+  .calendar-day-activity small { display: none; }
+  .calendar-grid.week .calendar-day { min-height: 0; }
+  .calendar-legend { gap: 12px; font-size: 9px; }
+  .calendar-day-heading { align-items: flex-start; }
+  .calendar-day-heading h2 { font-size: 18px; }
+  .calendar-task { grid-template-columns: 26px 3px minmax(0, 1fr) auto; gap: 8px; padding: 12px 10px; }
+  .calendar-task-copy h3 { font-size: 13px; }
+  .calendar-task-meta { gap: 6px 11px; font-size: 10px; }
+  .calendar-task-copy p { font-size: 11px; }
+  .calendar-task-actions { flex-direction: column; }
+  .calendar-task-actions button { width: 29px; height: 29px; }
+  .calendar-empty-day { flex-wrap: wrap; padding: 16px; }
+  .calendar-empty-day .btn { width: 100%; }
+  .calendar-task-modal { max-height: calc(100dvh - 32px); overflow-y: auto; padding: 24px; }
   .conditions-card { min-height: 370px; padding: 23px; }
   .conditions-main { flex-direction: column; align-items: flex-start; justify-content: center; }
   .big-weather strong { font-size: 62px; }
@@ -535,11 +694,38 @@ input:focus, select:focus, textarea:focus { border-color: #86a486; box-shadow: 0
   .conditions-metrics { gap: 5px; }
   .forecast-grid { overflow-x: auto; grid-template-columns: repeat(5, 125px); padding-bottom: 8px; scrollbar-width: none; }
   .lower-grid { grid-template-columns: 1fr; }
-  .weather-hero { grid-template-columns: 1fr; gap: 42px; padding: 25px; }
-  .weather-display { justify-content: flex-start; gap: 12px; }
-  .weather-display svg { width: 58px; }
-  .weather-display > strong { font-size: 58px; }
+  .weather-hero { min-height: 0; padding: 17px 17px 20px; }
+  .weather-hero-top { align-items: flex-start; gap: 8px; }
+  .weather-live-pill { gap: 7px; padding: 6px 9px; font-size: 9px; }
+  .weather-updated { max-width: 45%; padding-top: 5px; font-size: 9px; text-align: right; }
+  .weather-hero-main { min-height: 0; align-items: stretch; flex-direction: column; gap: 22px; padding: 32px 2px 0; }
+  .weather-display { display: grid; grid-template-columns: 48px auto minmax(0, 1fr); justify-content: start; gap: 9px; }
+  .weather-condition-icon svg { width: 43px; height: 43px; }
+  .weather-display > strong { font-size: 70px; }
+  .weather-display > strong span { font-size: 19px; }
+  .weather-condition-copy { gap: 4px; align-self: center; }
+  .weather-condition-copy b { font-size: 12px; }
+  .weather-condition-copy span { font-size: 10px; }
+  .weather-location { min-width: 0; padding: 13px 0 0; border-top: 1px solid rgba(255,255,255,.14); border-left: 0; text-align: left; }
+  .weather-location h2 { font-size: 25px; }
   .metric-grid { grid-template-columns: 1fr 1fr; }
+  .weather-metric-card { min-height: 118px; grid-template-columns: 34px minmax(0, 1fr); gap: 10px; padding: 14px 12px; border-radius: 14px; }
+  .metric-icon { width: 34px; height: 34px; border-radius: 11px; }
+  .metric-icon svg { width: 18px; height: 18px; }
+  .metric-copy { padding-right: 35px; }
+  .metric-copy strong { font-size: 20px; }
+  .metric-copy strong em { font-size: 9px; }
+  .humidity-ring, .wind-compass { position: absolute; top: 12px; right: 9px; }
+  .wind-compass { width: 60px; height: 60px; }
+  .wind-compass > span { font-size: 6px; }
+  .compass-north { top: 3px; }
+  .compass-east { right: 3px; }
+  .compass-south { bottom: 3px; }
+  .compass-west { left: 3px; }
+  .compass-pointer { width: 17px; height: 22px; }
+  .humidity-ring::before { inset: 4px; }
+  .humidity-ring span { font-size: 8px; }
+  .metric-gauge, .rainfall-dashes { grid-column: 1 / -1; }
   .forecast.detailed { grid-template-columns: repeat(5, 150px); }
   .crop-grid { grid-template-columns: 1fr; }
   .field-summary { align-items: flex-start; flex-wrap: wrap; }

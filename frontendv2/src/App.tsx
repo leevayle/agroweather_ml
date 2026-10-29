@@ -9,12 +9,16 @@ import {
   signup,
   addCalendarTask,
   fetchCropInsights,
+  fetchCalendarTasks,
+  updateCalendarTask,
+  deleteCalendarTask,
   streamFarmChat,
   updateMyCrops,
   ApiError,
   getUserErrorMessage,
   type AuthUser,
   type CropInsight,
+  type CalendarTask,
   type ChatTurn,
   type CurrentWeatherResponse,
   type ForecastDay,
@@ -27,6 +31,7 @@ type Page =
   | 'dashboard'
   | 'weather'
   | 'crops'
+  | 'calendar'
   | 'insights'
   | 'profile'
   | 'settings'
@@ -52,6 +57,7 @@ type IconName =
   | 'send'
   | 'chat'
   | 'calendar'
+  | 'edit'
   | 'bell'
   | 'menu'
   | 'close'
@@ -79,6 +85,7 @@ const iconPaths: Record<IconName, ReactNode> = {
   send: <><path d="m22 2-7 20-4-9-9-4 20-7Z" /><path d="M22 2 11 13" /></>,
   chat: <><path d="M20 11.5a7.5 7.5 0 0 1-7.5 7.5H6l-3 2v-6a7.5 7.5 0 1 1 17-3.5Z" /><path d="M8 11h.01M12 11h.01M16 11h.01" /></>,
   calendar: <><rect x="3" y="5" width="18" height="16" rx="2" /><path d="M16 3v4M8 3v4M3 10h18" /></>,
+  edit: <><path d="m15 5 4 4M4 20l4-.8L19 8a2.1 2.1 0 0 0-3-3L5 16l-1 4Z" /></>,
   bell: <><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9ZM10 21h4" /></>,
   menu: <path d="M4 7h16M4 12h16M4 17h16" />,
   close: <path d="m6 6 12 12M18 6 6 18" />,
@@ -109,6 +116,7 @@ const navItems: { id: Page; label: string; icon: IconName }[] = [
   { id: 'dashboard', label: 'Dashboard', icon: 'home' },
   { id: 'weather', label: 'Weather', icon: 'cloud' },
   { id: 'crops', label: 'Crops', icon: 'leaf' },
+  { id: 'calendar', label: 'Calendar', icon: 'calendar' },
   { id: 'insights', label: 'AI Insights', icon: 'spark' },
   { id: 'profile', label: 'Profile', icon: 'user' },
   { id: 'settings', label: 'Settings', icon: 'settings' },
@@ -319,7 +327,7 @@ function AppShell({
         <header className="mobile-header"><Logo onClick={() => go('dashboard')} /><button onClick={() => go('settings')} aria-label="Settings"><Icon name="settings" /></button></header>
         {children}
       </div>
-      <nav className="bottom-nav">{navItems.slice(0,5).map(item => <button className={page === item.id ? 'active' : ''} key={item.id} onClick={() => go(item.id)}><Icon name={item.icon} /><small>{item.label === 'AI Insights' ? 'Insights' : item.label}</small></button>)}</nav>
+      <nav className="bottom-nav">{navItems.filter((item) => item.id !== 'settings').map(item => <button className={page === item.id ? 'active' : ''} key={item.id} onClick={() => go(item.id)}><Icon name={item.icon} /><small>{item.label === 'AI Insights' ? 'Insights' : item.label}</small></button>)}</nav>
     </div>
   )
 }
@@ -409,14 +417,37 @@ function ForecastStrip({ forecast, detailed = false }: { forecast: ForecastDay[]
 function Dashboard({
   user,
   go,
+  cropInsights,
+  insightsLoading,
+  insightsError,
 }: {
   user: AuthUser
   go: (page: Page) => void
+  cropInsights: CropInsight[]
+  insightsLoading: boolean
+  insightsError: string
 }) {
-  const { weather, forecast, weatherError, forecastError, loading, refresh } = useWeatherData()
+  const { weather, forecast, weatherError, loading, refresh } = useWeatherData()
   const current = weather?.weather
   const greeting = new Date().getHours() < 12 ? 'Good morning' : new Date().getHours() < 18 ? 'Good afternoon' : 'Good evening'
-  const rainyDay = forecast.find((day) => day.rainfall.rain)
+  const todayKey = dateKey(new Date())
+  const recommendation = cropInsights
+    .flatMap((insight) => insight.activities.map((activity, index) => {
+      const dateMatch = activity.timing.match(/\b\d{4}-\d{2}-\d{2}\b/)
+      return {
+        crop: insight.crop,
+        activity,
+        order: index,
+        date: dateMatch?.[0],
+      }
+    }))
+    .filter((item) => !item.date || item.date >= todayKey)
+    .sort((left, right) => {
+      if (left.date && right.date) return left.date.localeCompare(right.date) || left.order - right.order
+      if (left.date) return -1
+      if (right.date) return 1
+      return left.order - right.order
+    })[0]
 
   return (
     <main className="app-content">
@@ -430,7 +461,7 @@ function Dashboard({
           <div className="conditions-main"><div className="big-weather"><Icon name="sun" size={66} /><strong>{displayValue(current?.temperature_c, '°')}<span>C</span></strong></div><div className="weather-copy"><strong>{user.location || 'Your farm'}</strong><span>{weather?.timestamp ? `Updated ${new Date(weather.timestamp).toLocaleString()}` : loading ? 'Loading live data…' : 'No station reading received yet'}</span></div></div>
           <div className="conditions-metrics"><span><Icon name="droplet" /> <b>{displayValue(current?.humidity_percent, '%')}</b><small>Humidity</small></span><span><Icon name="wind" /> <b>{displayValue(current?.wind_speed_kmh, ' km/h')}</b><small>Wind speed</small></span><span><Icon name="rain" /> <b>{displayValue(current?.rainfall_mm, ' mm')}</b><small>Rainfall</small></span></div>
         </article>
-        <article className="card ai-card"><div className="card-title"><div><span className="eyebrow">Forecast note</span><h2>{rainyDay ? 'Rain in the forecast' : 'Your forecast'}</h2></div><span className="icon-tile amber"><Icon name="spark" /></span></div><p>{rainyDay ? `${Math.round((rainyDay.rainfall.probability ?? 0) * 100)}% chance of rain on ${new Date(`${rainyDay.date}T12:00:00`).toLocaleDateString(undefined, { weekday: 'long' })}${rainyDay.rainfall.amount_mm == null ? '.' : `, with ${displayValue(rainyDay.rainfall.amount_mm, ' mm')} expected.`}` : forecast.length ? 'No rain is predicted in the available forecast.' : 'Forecast data is not available yet.'}</p>{forecastError && <small className="api-error">{forecastError}</small>}<div className="confidence"><small>Based on the backend forecast for your area.</small></div><button onClick={() => go('insights')}>View weather insights <Icon name="arrow" size={16} /></button></article>
+        <article className="card ai-card"><div className="card-title"><div><span className="eyebrow">{recommendation ? `AI recommendation · ${recommendation.crop}` : 'AI recommendation'}</span><h2>{recommendation?.activity.activity || (insightsLoading ? 'Preparing your recommendation' : 'Recommendations for your farm')}</h2></div><span className="icon-tile amber"><Icon name="spark" /></span></div><p>{recommendation ? `${recommendation.activity.timing}. ${recommendation.activity.reason}` : insightsLoading ? 'Finding the most useful next step for your crops and local conditions…' : insightsError ? 'Recommendations are unavailable right now. Visit insights to try again.' : user.crops?.length ? 'No recommendations are available at the moment. Check back soon.' : 'Add crops to your farm profile to receive tailored recommendations.'}</p><div className="confidence"><small>Recommendations based on your crops and local weather.</small></div><button onClick={() => go('insights')}>View more insights <Icon name="arrow" size={16} /></button></article>
       </section>
       <section className="content-section"><div className="section-title"><div><h2>Forecast</h2><p>Daily forecast from AgroWeather.</p></div><button onClick={() => go('weather')}>View weather <Icon name="arrow" size={16} /></button></div><ForecastStrip forecast={forecast} /></section>
       <section className="lower-grid">
@@ -444,15 +475,81 @@ function Dashboard({
 function Weather({ user }: { user: AuthUser }) {
   const { weather, forecast, weatherError, forecastError, loading, refresh } = useWeatherData()
   const current = weather?.weather
-  return <main className="app-content"><PageHeader eyebrow="Live field weather" title="Weather" body="Current readings and forecast supplied by the backend."><Button variant="secondary" onClick={refresh}>{loading ? 'Updating…' : 'Refresh'}</Button></PageHeader>
+  const condition = (current?.rain_status || '').toLowerCase()
+  const conditionIcon: IconName = condition.includes('rain') && !condition.includes('no rain')
+    ? 'rain'
+    : condition.includes('cloud')
+      ? 'cloud'
+      : 'sun'
+  const humidity = current?.humidity_percent
+  const windSpeed = current?.wind_speed_kmh
+  const windDirection = current?.wind_direction_deg
+  const windDirectionLabel = windDirection == null
+    ? '—'
+    : ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'][Math.round(((windDirection % 360) + 360) % 360 / 45) % 8]
+  const rainfall = current?.rainfall_mm
+  const updatedAt = weather?.timestamp
+    ? new Date(weather.timestamp).toLocaleString(undefined, {
+      weekday: 'short',
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+    })
+    : null
+
+  return <main className="app-content"><PageHeader eyebrow="Live field weather" title="Weather" body="Current conditions and the forecast for your area."><Button variant="secondary" onClick={refresh}>{loading ? 'Updating…' : 'Refresh'}</Button></PageHeader>
     {weatherError && <p className="api-error" role="alert">{weatherError}</p>}
     <article className="weather-hero">
-      <div><span className="status-dot light">{weather?.status === 'online' ? 'Live station data' : 'Waiting for station data'}</span><h2>{weather?.station_id || user.station_code || 'Weather station'}</h2><p>{user.farm_name || 'Your farm'}{user.location ? ` · ${user.location}` : ''}</p></div>
-      <div className="weather-display"><Icon name="sun" size={86} /><strong>{displayValue(current?.temperature_c, '°')}<span>C</span></strong><div><b>{current?.rain_status || weather?.message || 'Current conditions'}</b><span>{current?.day_night || 'Live sensor reading'}</span><small>{weather?.timestamp ? `Updated ${new Date(weather.timestamp).toLocaleString()}` : 'No timestamp available'}</small></div></div>
+      <div className="weather-hero-top">
+        <span className={`weather-live-pill ${weather?.status === 'online' ? 'is-live' : ''}`}><i />{weather?.status === 'online' ? 'Live station data' : 'Waiting for station data'}</span>
+        <span className="weather-updated">{updatedAt ? `Updated ${updatedAt}` : loading ? 'Checking for an update…' : 'No recent update'}</span>
+      </div>
+      <div className="weather-hero-main">
+        <div className="weather-display">
+          <span className={`weather-condition-icon ${conditionIcon}`}><Icon name={conditionIcon} size={66} /></span>
+          <strong>{displayValue(current?.temperature_c, '°')}<span>C</span></strong>
+          <div className="weather-condition-copy">
+            <b>{current?.rain_status || weather?.message || 'Current conditions'}</b>
+            <span>{current?.day_night || 'Live sensor reading'}</span>
+          </div>
+        </div>
+        <div className="weather-location">
+          <span>{weather?.station_id || user.station_code || 'Weather station'}</span>
+          <h2>{user.location || 'Farm location not set'}</h2>
+          <p>{user.farm_name || 'Your farm'}</p>
+        </div>
+      </div>
     </article>
-    <section className="metric-grid">{[['droplet','Humidity',displayValue(current?.humidity_percent),'%'],['wind','Wind',displayValue(current?.wind_speed_kmh),'km/h'],['pressure','Pressure',displayValue(current?.pressure_hpa),'hPa'],['rain','Rainfall',displayValue(current?.rainfall_mm),'mm']].map(([icon,label,value,unit]) => <article className="metric-card" key={label}><span className="icon-tile blue"><Icon name={icon as IconName} /></span><div><small>{label}</small><strong>{value}<em>{unit}</em></strong></div></article>)}</section>
+    <section className="metric-grid weather-metric-grid" aria-label="Current weather measurements">
+      <article className="metric-card weather-metric-card humidity-card">
+        <span className="metric-icon"><Icon name="droplet" /></span>
+        <div className="metric-copy"><small>Humidity</small><strong>{displayValue(humidity)}<em>%</em></strong><span>Current reading</span></div>
+        <div className="humidity-ring" style={{ background: `conic-gradient(var(--forest-2) ${Math.max(0, Math.min(100, humidity ?? 0))}%, #e8eee7 0)` }}><span>{humidity == null ? '—' : `${Math.round(humidity)}%`}</span></div>
+      </article>
+      <article className="metric-card weather-metric-card wind-card">
+        <span className="metric-icon"><Icon name="wind" /></span>
+        <div className="metric-copy"><small>Wind</small><strong>{displayValue(windSpeed)}<em>km/h</em></strong><span>Current speed</span></div>
+        <div className="metric-gauge" aria-label={windSpeed == null ? 'Wind speed unavailable' : `Wind speed ${displayValue(windSpeed)} kilometres per hour`}>
+          <span style={{ width: `${Math.max(0, Math.min(100, ((windSpeed ?? 0) / 60) * 100))}%` }} />
+        </div>
+      </article>
+      <article className="metric-card weather-metric-card direction-card">
+        <span className="metric-icon"><Icon name="wind" /></span>
+        <div className="metric-copy"><small>Wind direction</small><strong>{windDirectionLabel}<em>{windDirection == null ? '' : `${Math.round(windDirection)}°`}</em></strong><span>{windDirection == null ? 'No reading available' : 'Direction of travel'}</span></div>
+        <div className="wind-compass" role="img" aria-label={windDirection == null ? 'Wind direction unavailable' : `Wind direction ${windDirectionLabel}, ${Math.round(windDirection)} degrees`}>
+          <span className="compass-north">N</span><span className="compass-east">E</span><span className="compass-south">S</span><span className="compass-west">W</span>
+          <svg className="compass-pointer" viewBox="0 0 24 36" aria-hidden="true" style={{ '--direction-angle': `${windDirection ?? 0}deg` } as React.CSSProperties}><path d="M12 1C9.2 9.1 3.8 22.1 3.8 27.1a8.2 8.2 0 0 0 16.4 0C20.2 22.1 14.8 9.1 12 1Z" /></svg>
+        </div>
+      </article>
+      <article className="metric-card weather-metric-card rainfall-card">
+        <span className="metric-icon"><Icon name="rain" /></span>
+        <div className="metric-copy"><small>Rainfall</small><strong>{displayValue(rainfall)}<em>mm</em></strong><span>{current?.rain_status || 'Current reading'}</span></div>
+        <div className="rainfall-dashes" aria-hidden="true"><i /><i /><i /><i /><i /><i /><i /></div>
+      </article>
+    </section>
     {forecastError && <p className="api-error" role="alert">{forecastError}</p>}
-    <section className="content-section"><div className="section-title"><div><h2>Forecast</h2><p>Daily predictions from the backend forecast.</p></div></div><ForecastStrip forecast={forecast} detailed /></section>
+    <section className="content-section"><div className="section-title"><div><h2>Forecast</h2><p>Your upcoming 7-day outlook.</p></div></div><ForecastStrip forecast={forecast} detailed /></section>
   </main>
 }
 
@@ -496,6 +593,262 @@ function Crops({
     {error && <p className="api-error" role="alert">{error}</p>}
     {crops.length ? <section className="crop-grid">{crops.map((crop, index) => <article className="crop-card" key={crop}><div className={`crop-art ${['tomato', 'wheat', 'corn'][index % 3]}`}><Icon name="leaf" size={44} /></div><div className="crop-body"><span className="overline">{user.farm_name || 'Your farm'}</span><h2>{crop}</h2><div className="crop-stats"><span><small>Farm location</small><b>{user.location || 'Not set'}</b></span><span><small>Farm size</small><b>{user.acres || 'Not set'}</b></span></div><Button variant="secondary" disabled={saving} onClick={() => void saveCrops(crops.filter((item) => item !== crop))}>{saving ? 'Saving…' : 'Remove crop'}</Button></div></article>)}</section> : <p className="empty-state card">No crops are saved to your account yet. Add the crops you grow to personalize your farm dashboard.</p>}
     {showAdd && <div className="modal-backdrop" onClick={() => !saving && setShowAdd(false)}><div className="modal" onClick={event => event.stopPropagation()}><button className="modal-close" onClick={() => setShowAdd(false)}><Icon name="close" /></button><span className="icon-tile"><Icon name="leaf" /></span><h2>Add a crop</h2><p>This crop will be saved to your account and appear on your dashboard.</p><form onSubmit={addCrop}><label>Crop name<input name="name" required placeholder="e.g. Potatoes" /></label><Button type="submit" className="full">{saving ? 'Saving…' : 'Add crop'}</Button></form></div></div>}
+  </main>
+}
+
+function dateKey(date: Date): string {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+function dateFromKey(key: string): Date {
+  const [year, month, day] = key.split('-').map(Number)
+  return new Date(year, month - 1, day)
+}
+
+function Calendar({ user }: { user: AuthUser }) {
+  const todayKey = dateKey(new Date())
+  const todayDate = dateFromKey(todayKey)
+  const [anchorDate, setAnchorDate] = useState(() => dateFromKey(todayKey))
+  const [selectedDate, setSelectedDate] = useState(todayKey)
+  const [view, setView] = useState<'month' | 'week'>('month')
+  const [tasks, setTasks] = useState<CalendarTask[]>([])
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+  const [refreshKey, setRefreshKey] = useState(0)
+  const [formOpen, setFormOpen] = useState(false)
+  const [editingTask, setEditingTask] = useState<CalendarTask | null>(null)
+  const [taskForm, setTaskForm] = useState({ activity: '', crop: '', date: todayKey, reason: '' })
+  const [notice, setNotice] = useState<{ id: number; kind: 'success' | 'error'; message: string } | null>(null)
+  const [pendingTask, setPendingTask] = useState('')
+  const noticeId = useRef(0)
+
+  const monthStart = new Date(anchorDate.getFullYear(), anchorDate.getMonth(), 1)
+  const gridStart = view === 'week'
+    ? new Date(anchorDate.getFullYear(), anchorDate.getMonth(), anchorDate.getDate() - anchorDate.getDay())
+    : new Date(monthStart.getFullYear(), monthStart.getMonth(), 1 - monthStart.getDay())
+  const gridDayCount = view === 'week'
+    ? 7
+    : Math.ceil((monthStart.getDay() + new Date(anchorDate.getFullYear(), anchorDate.getMonth() + 1, 0).getDate()) / 7) * 7
+  const rangeStart = dateKey(gridStart)
+  const rangeEnd = dateKey(new Date(gridStart.getFullYear(), gridStart.getMonth(), gridStart.getDate() + gridDayCount - 1))
+  const upcomingEndKey = dateKey(new Date(todayDate.getFullYear(), todayDate.getMonth(), todayDate.getDate() + 30))
+  const selectedDay = dateFromKey(selectedDate)
+  const monthLabel = anchorDate.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })
+  const selectedLabel = selectedDay.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })
+  const selectedTasks = tasks.filter((task) => task.date === selectedDate)
+  const unscheduledTasks = tasks.filter((task) => !task.date)
+  const upcomingTasks = tasks
+    .filter((task) => task.date && task.date >= todayKey && task.date <= upcomingEndKey && task.status === 'planned')
+    .sort((left, right) => (left.date ?? '').localeCompare(right.date ?? ''))
+  const tasksByDate = new Map<string, CalendarTask[]>()
+  for (const task of tasks) {
+    if (!task.date) continue
+    const datedTasks = tasksByDate.get(task.date) ?? []
+    datedTasks.push(task)
+    tasksByDate.set(task.date, datedTasks)
+  }
+
+  useEffect(() => {
+    let active = true
+    setLoading(true)
+    setError('')
+    const visibleTasks = fetchCalendarTasks(rangeStart, rangeEnd)
+    const upcomingTasksRequest = rangeStart <= todayKey && rangeEnd >= upcomingEndKey
+      ? Promise.resolve([])
+      : fetchCalendarTasks(todayKey, upcomingEndKey)
+    void Promise.all([visibleTasks, upcomingTasksRequest])
+      .then(([visibleResult, upcomingResult]) => {
+        if (active) {
+          setTasks(Array.from(new Map([...visibleResult, ...upcomingResult].map((task) => [task.id, task])).values()))
+        }
+      })
+      .catch((requestError: unknown) => {
+        if (active) setError(getUserErrorMessage(requestError, 'Your calendar couldn’t be loaded. Please try again.'))
+      })
+      .finally(() => {
+        if (active) setLoading(false)
+      })
+    return () => {
+      active = false
+    }
+  }, [rangeStart, rangeEnd, todayKey, upcomingEndKey, refreshKey])
+
+  useEffect(() => {
+    if (!notice) return
+    const timeout = window.setTimeout(() => setNotice(null), 4200)
+    return () => window.clearTimeout(timeout)
+  }, [notice])
+
+  const announce = (kind: 'success' | 'error', message: string) => {
+    setNotice({ id: ++noticeId.current, kind, message })
+  }
+
+  const openAddTask = () => {
+    setEditingTask(null)
+    setTaskForm({ activity: '', crop: user.crops?.[0] ?? '', date: selectedDate, reason: '' })
+    setFormOpen(true)
+  }
+
+  const openEditTask = (task: CalendarTask) => {
+    setEditingTask(task)
+    setTaskForm({
+      activity: task.activity,
+      crop: task.crop === 'Farm task' ? '' : task.crop,
+      date: task.date ?? selectedDate,
+      reason: task.reason,
+    })
+    setFormOpen(true)
+  }
+
+  const saveTask = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!taskForm.activity.trim() || !taskForm.date) return
+    setSaving(true)
+    try {
+      if (editingTask) {
+        await updateCalendarTask(editingTask.id, {
+          activity: taskForm.activity.trim(),
+          crop: taskForm.crop.trim() || 'Farm task',
+          date: taskForm.date,
+          reason: taskForm.reason.trim(),
+        })
+        announce('success', 'Calendar task updated.')
+      } else {
+        const result = await addCalendarTask({
+          crop: taskForm.crop.trim() || 'Farm task',
+          activity: taskForm.activity.trim(),
+          timing: taskForm.date,
+          reason: taskForm.reason.trim() || 'Added from your calendar.',
+        })
+        announce('success', result.created ? 'Task added to your calendar.' : 'This task is already in your calendar.')
+      }
+      setSelectedDate(taskForm.date)
+      setAnchorDate(dateFromKey(taskForm.date))
+      setFormOpen(false)
+      setRefreshKey((current) => current + 1)
+    } catch (requestError) {
+      announce('error', getUserErrorMessage(requestError, 'We couldn’t save this task. Please try again.'))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const toggleTaskStatus = async (task: CalendarTask) => {
+    setPendingTask(task.id)
+    try {
+      const updated = await updateCalendarTask(task.id, {
+        status: task.status === 'completed' ? 'planned' : 'completed',
+      })
+      setTasks((current) => current.map((item) => item.id === task.id ? updated : item))
+      announce('success', updated.status === 'completed' ? 'Task marked as done.' : 'Task moved back to your plan.')
+    } catch (requestError) {
+      announce('error', getUserErrorMessage(requestError, 'We couldn’t update this task. Please try again.'))
+    } finally {
+      setPendingTask('')
+    }
+  }
+
+  const removeTask = async (task: CalendarTask) => {
+    if (!window.confirm(`Delete “${task.activity}” from your calendar?`)) return
+    setPendingTask(task.id)
+    try {
+      await deleteCalendarTask(task.id)
+      setTasks((current) => current.filter((item) => item.id !== task.id))
+      announce('success', 'Task deleted from your calendar.')
+    } catch (requestError) {
+      announce('error', getUserErrorMessage(requestError, 'We couldn’t delete this task. Please try again.'))
+    } finally {
+      setPendingTask('')
+    }
+  }
+
+  const movePeriod = (direction: -1 | 1) => {
+    const next = view === 'month'
+      ? new Date(anchorDate.getFullYear(), anchorDate.getMonth() + direction, Math.min(anchorDate.getDate(), new Date(anchorDate.getFullYear(), anchorDate.getMonth() + direction + 1, 0).getDate()))
+      : new Date(anchorDate.getFullYear(), anchorDate.getMonth(), anchorDate.getDate() + direction * 7)
+    setAnchorDate(next)
+    setSelectedDate(dateKey(next))
+  }
+
+  const changeView = (nextView: 'month' | 'week') => {
+    setView(nextView)
+    if (nextView === 'week') {
+      setAnchorDate(selectedDay)
+    }
+  }
+
+  const renderTaskList = (dayTasks: CalendarTask[]) => dayTasks.length ? dayTasks.map((task) => <article className={`calendar-task ${task.status === 'completed' ? 'is-completed' : ''}`} key={task.id}>
+    <button className="calendar-task-check" type="button" disabled={pendingTask === task.id} onClick={() => void toggleTaskStatus(task)} aria-label={task.status === 'completed' ? 'Mark task as planned' : 'Mark task as done'}><Icon name="check" size={16} /></button>
+    <span className="calendar-task-color" />
+    <div className="calendar-task-copy"><h3>{task.activity}</h3><div className="calendar-task-meta"><span><Icon name="leaf" size={13} /> {task.crop}</span>{task.timing && <span><Icon name="clock" size={13} /> {task.timing}</span>}</div>{task.reason && <p>{task.reason}</p>}</div>
+    <div className="calendar-task-actions"><button type="button" disabled={pendingTask === task.id} onClick={() => openEditTask(task)} aria-label={`Edit ${task.activity}`}><Icon name="edit" size={16} /></button><button type="button" disabled={pendingTask === task.id} onClick={() => void removeTask(task)} aria-label={`Delete ${task.activity}`}><Icon name="close" size={16} /></button></div>
+  </article>) : <div className="calendar-empty-day"><span className="icon-tile"><Icon name="calendar" /></span><div><h3>No tasks planned</h3><p>Add a task for this date and keep your farm work on track.</p></div></div>
+
+  return <main className="app-content calendar-page">
+    <PageHeader eyebrow="Plan your farm work" title="Calendar" body="Keep crop activities and daily tasks in one simple view."><Button icon="plus" onClick={openAddTask}>Add task</Button></PageHeader>
+    {notice && <div key={notice.id} className={`calendar-toast ${notice.kind}`} role={notice.kind === 'error' ? 'alert' : 'status'}><Icon name={notice.kind === 'success' ? 'check' : 'cloud'} size={18} /><span>{notice.message}</span><button type="button" aria-label="Dismiss notification" onClick={() => setNotice(null)}><Icon name="close" size={16} /></button></div>}
+    <div className="calendar-layout">
+    <section className="calendar-board card" aria-label="Farm calendar">
+      <div className="calendar-toolbar">
+        <div className="calendar-period"><h2>{monthLabel}</h2><p>{view === 'week' ? `Week of ${gridStart.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}` : 'Your farm activity planner'}</p></div>
+        <div className="calendar-controls">
+          <div className="calendar-view-switch" role="group" aria-label="Calendar view">{(['month', 'week'] as const).map((option) => <button type="button" key={option} className={view === option ? 'active' : ''} aria-pressed={view === option} onClick={() => changeView(option)}>{option === 'month' ? 'Month' : 'Week'}</button>)}</div>
+          <button className="calendar-today-button" type="button" onClick={() => { setAnchorDate(dateFromKey(todayKey)); setSelectedDate(todayKey) }}>Today</button>
+          <button className="calendar-nav-button previous" type="button" aria-label="Previous period" onClick={() => movePeriod(-1)}><Icon name="chevron" /></button>
+          <button className="calendar-nav-button" type="button" aria-label="Next period" onClick={() => movePeriod(1)}><Icon name="chevron" /></button>
+        </div>
+      </div>
+      {error && <div className="calendar-load-error" role="alert"><p>{error}</p><button type="button" onClick={() => setRefreshKey((current) => current + 1)}>Try again</button></div>}
+      <div className={`calendar-grid ${view}`} role="grid" aria-label={view === 'month' ? monthLabel : 'Selected week'}>
+        {Array.from({ length: 7 }, (_, index) => <div className="calendar-weekday" role="columnheader" key={`weekday-${index}`}>{new Date(2024, 0, 7 + index).toLocaleDateString(undefined, { weekday: 'short' })}</div>)}
+        {Array.from({ length: gridDayCount }, (_, index) => {
+          const date = new Date(gridStart.getFullYear(), gridStart.getMonth(), gridStart.getDate() + index)
+          const key = dateKey(date)
+          const dayTasks = tasksByDate.get(key) ?? []
+          const inMonth = date.getMonth() === anchorDate.getMonth()
+          return <button type="button" role="gridcell" key={key} className={`calendar-day ${inMonth ? '' : 'outside-month'} ${key === selectedDate ? 'selected' : ''} ${key === todayKey ? 'today' : ''}`} aria-label={`${date.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}${dayTasks.length ? `, ${dayTasks.length} ${dayTasks.length === 1 ? 'task' : 'tasks'}` : ''}`} aria-selected={key === selectedDate} onClick={() => { setSelectedDate(key); if (view === 'month' && !inMonth) setAnchorDate(date) }}>
+            <span className="calendar-day-number">{date.getDate()}</span>
+            {dayTasks.length > 0 && <span className="calendar-day-activity">{dayTasks.slice(0, 2).map((task) => <i key={task.id} className={task.status === 'completed' ? 'done' : ''} />)}<small>{dayTasks[0].activity}{dayTasks.length > 1 ? ` +${dayTasks.length - 1}` : ''}</small></span>}
+          </button>
+        })}
+      </div>
+      <div className="calendar-legend"><span><i className="planned" /> Planned</span><span><i className="completed" /> Done</span>{loading && <span className="calendar-loading"><span className="button-spinner" /> Updating calendar…</span>}</div>
+    </section>
+    <aside className="calendar-upcoming card" aria-label="Upcoming tasks">
+      <div className="calendar-upcoming-heading"><span className="eyebrow"><Icon name="clock" size={13} /> Next 30 days</span><h2>Upcoming tasks</h2><p>Your next planned farm activities.</p></div>
+      {upcomingTasks.length ? <div className="calendar-upcoming-list">{upcomingTasks.map((task) => {
+        const taskDate = dateFromKey(task.date ?? todayKey)
+        return <button type="button" className="calendar-upcoming-task" key={task.id} onClick={() => {
+          setSelectedDate(task.date ?? todayKey)
+          setAnchorDate(taskDate)
+        }}>
+          <span className="calendar-upcoming-date"><b>{taskDate.toLocaleDateString(undefined, { day: 'numeric' })}</b><small>{taskDate.toLocaleDateString(undefined, { month: 'short' })}</small></span>
+          <span className="calendar-upcoming-copy"><b>{task.activity}</b><small>{task.crop}</small></span>
+          <Icon name="chevron" size={15} />
+        </button>
+      })}</div> : <div className="calendar-upcoming-empty"><span className="icon-tile"><Icon name="calendar" /></span><p>{loading ? 'Loading your plans…' : 'No upcoming tasks yet. Add a task or save an insight to your calendar.'}</p></div>}
+    </aside>
+    </div>
+    <section className="calendar-day-section" aria-label={`Tasks for ${selectedLabel}`}>
+      <div className="calendar-day-heading"><div><span className="eyebrow">{selectedDate === todayKey ? 'Today' : 'Selected day'}</span><h2>{selectedLabel}</h2><p>{selectedTasks.length ? `${selectedTasks.length} ${selectedTasks.length === 1 ? 'task' : 'tasks'} planned` : 'Your plans for this day'}</p></div><Button variant="secondary" icon="plus" onClick={openAddTask}>Add task</Button></div>
+      <div className="calendar-task-list">{renderTaskList(selectedTasks)}</div>
+    </section>
+    {unscheduledTasks.length > 0 && <section className="calendar-unscheduled"><div><h2>Needs a date</h2><p>Saved recommendations you can schedule whenever suits your farm.</p></div><div className="calendar-task-list">{renderTaskList(unscheduledTasks)}</div></section>}
+    {formOpen && <div className="modal-backdrop" onClick={() => !saving && setFormOpen(false)}><div className="modal calendar-task-modal" role="dialog" aria-modal="true" aria-labelledby="calendar-task-title" onClick={(event) => event.stopPropagation()}>
+      <button className="modal-close" type="button" disabled={saving} onClick={() => setFormOpen(false)} aria-label="Close"><Icon name="close" /></button>
+      <span className="icon-tile"><Icon name="calendar" /></span><h2 id="calendar-task-title">{editingTask ? 'Edit task' : 'Add a calendar task'}</h2><p>Choose a date and add a little detail to your farm plan.</p>
+      <form onSubmit={(event) => void saveTask(event)}>
+        <label>Task<input required maxLength={500} autoFocus value={taskForm.activity} onChange={(event) => setTaskForm((current) => ({ ...current, activity: event.target.value }))} placeholder="e.g. Check soil moisture" /></label>
+        <label>Crop or field<input maxLength={100} value={taskForm.crop} onChange={(event) => setTaskForm((current) => ({ ...current, crop: event.target.value }))} placeholder="e.g. Maize" /></label>
+        <label>Date<input required type="date" value={taskForm.date} onChange={(event) => setTaskForm((current) => ({ ...current, date: event.target.value }))} /></label>
+        <label>Notes <span className="optional-label">Optional</span><textarea rows={3} maxLength={500} value={taskForm.reason} onChange={(event) => setTaskForm((current) => ({ ...current, reason: event.target.value }))} placeholder="Add a note or reminder" /></label>
+        <Button type="submit" disabled={saving} icon="check" className="full">{saving ? 'Saving…' : editingTask ? 'Save changes' : 'Add task'}</Button>
+      </form>
+    </div></div>}
   </main>
 }
 
@@ -712,7 +1065,7 @@ function PairModal({ close, stationCode }: { close: () => void; stationCode?: st
 export default function App() {
   const [page, setPage] = useState<Page>(() => {
     const path = window.location.pathname
-    const match = (['signin', 'signup', 'dashboard', 'weather', 'crops', 'insights', 'profile', 'settings', 'privacy', 'terms'] as Page[])
+    const match = (['signin', 'signup', 'dashboard', 'weather', 'crops', 'calendar', 'insights', 'profile', 'settings', 'privacy', 'terms'] as Page[])
       .find((item) => path === `/${item}`)
     return match ?? 'landing'
   })
@@ -791,9 +1144,9 @@ export default function App() {
   useEffect(() => {
     const handlePopState = () => {
       const path = window.location.pathname
-      const next = (['signin', 'signup', 'dashboard', 'weather', 'crops', 'insights', 'profile', 'settings', 'privacy', 'terms'] as Page[])
+      const next = (['signin', 'signup', 'dashboard', 'weather', 'crops', 'calendar', 'insights', 'profile', 'settings', 'privacy', 'terms'] as Page[])
         .find((item) => path === `/${item}`) ?? 'landing'
-      if (['dashboard', 'weather', 'crops', 'insights', 'profile', 'settings'].includes(next) && !user) {
+      if (['dashboard', 'weather', 'crops', 'calendar', 'insights', 'profile', 'settings'].includes(next) && !user) {
         window.history.replaceState({}, '', '/signin')
         setPage('signin')
         return
@@ -804,7 +1157,7 @@ export default function App() {
     return () => window.removeEventListener('popstate', handlePopState)
   }, [user])
 
-  const privatePages: Page[] = ['dashboard', 'weather', 'crops', 'insights', 'profile', 'settings']
+  const privatePages: Page[] = ['dashboard', 'weather', 'crops', 'calendar', 'insights', 'profile', 'settings']
   const go = (requested: Page) => {
     const next = privatePages.includes(requested) && !user ? 'signin' : requested
     const path = next === 'landing' ? '/' : `/${next}`
@@ -835,9 +1188,10 @@ export default function App() {
   return <>
     {sessionMessage && <p className="session-message" role="status">{sessionMessage}</p>}
     <AppShell page={page} go={go} user={user} onSignOut={handleSignOut}>
-    {page === 'dashboard' && <Dashboard user={user} go={go} />}
+    {page === 'dashboard' && <Dashboard user={user} go={go} cropInsights={cropInsights} insightsLoading={insightsLoading} insightsError={insightsError} />}
     {page === 'weather' && <Weather user={user} />}
     {page === 'crops' && <Crops user={user} onUserUpdate={setUser} />}
+    {page === 'calendar' && <Calendar user={user} />}
     {page === 'insights' && <Insights user={user} cropInsights={cropInsights} insightsError={insightsError} insightsLoading={insightsLoading} onRefreshInsights={() => setInsightsRefresh((value) => value + 1)} />}
     {page === 'profile' && <Profile user={user} onSignOut={handleSignOut} />}
     {page === 'settings' && <Settings go={go} onPair={() => setPairing(true)} onSignOut={handleSignOut} />}
