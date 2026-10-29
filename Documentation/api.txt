@@ -945,21 +945,38 @@ Request:
 
 Response:
 
-    {
-      "reply": "..."
-    }
+    Content-Type: text/event-stream
+
+    event: token
+    data: {"text":"The forecast shows..."}
+
+    event: token
+    data: {"text":" Protect your maize from heavy rain."}
+
+    event: done
+    data: [DONE]
+
+    Provider failures are sent as a friendly `error` event followed by
+    `done`. Detailed provider diagnostics are written only to the backend
+    log.
 
 Gemini configuration:
     Set GEMINI_API_KEY in the root .env file. GEMINI_MODEL is
-    optional and defaults to gemini-2.5-flash. Restart the backend after
-    changing the configuration. Never put the provider key in frontend code.
+    optional and defaults to gemini-3.8-flash, which is listed as free of
+    charge on Google's Free tier. Free-tier usage is subject to Google's
+    model availability and rate limits. Chat uses Google's Interactions API
+    and does not ask Google to store conversation requests. Restart the
+    backend after changing the configuration. Never put the provider key
+    in frontend code.
 
 Errors:
-    401 - missing or invalid access token
-    422 - invalid or empty message
-    429 - Gemini project rate limit or usage quota reached
-    502 - Gemini request failed
-    503 - GEMINI_API_KEY is missing or rejected
+    Before streaming:
+        401 - missing or invalid access token
+        422 - invalid or empty message
+        503 - assistant configuration unavailable
+    During streaming:
+        event: error - friendly message for usage limits or temporary issues
+        Detailed Gemini diagnostics are available only in the backend log.
 
 
 END OF AGROWEATHER BACKEND API REFERENCE

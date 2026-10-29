@@ -1,13 +1,16 @@
 import json
 import re
-from typing import Any, Dict, List
+from http.client import HTTPResponse
+from time import sleep
+from typing import Any, Dict, Iterator, List, Tuple
 from urllib.error import HTTPError, URLError
-from urllib.parse import quote
 from urllib.request import Request, urlopen
 
 from server.config import GEMINI_API_KEY, GEMINI_MODEL
 
-GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta/models"
+GEMINI_INTERACTIONS_ENDPOINT = (
+    "https://generativelanguage.googleapis.com/v1beta/interactions"
+)
 
 
 class ChatConfigurationError(RuntimeError):
@@ -15,23 +18,102 @@ class ChatConfigurationError(RuntimeError):
 
 
 class ChatProviderError(RuntimeError):
-    def __init__(self, message: str, status_code: int = 502):
+    def __init__(
+        self,
+        message: str,
+        status_code: int = 502,
+        diagnostic: str = "",
+    ):
         super().__init__(message)
         self.status_code = status_code
+        self.diagnostic = diagnostic
 
 
-def generate_chat_reply(
+def _provider_error_message(error: HTTPError) -> str:
+    try:
+        payload = json.loads(error.read().decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return ""
+
+    provider_error = payload.get("error") if isinstance(payload, dict) else None
+    message = (
+        provider_error.get("message")
+        if isinstance(provider_error, dict)
+        else None
+    )
+    return " ".join(message.split())[:300] if isinstance(message, str) else ""
+
+
+def _provider_failure(error: HTTPError) -> ChatProviderError:
+    provider_message = _provider_error_message(error)
+    diagnostic = (
+        f"Gemini Interactions API returned HTTP {error.code} "
+        f"for model {GEMINI_MODEL}."
+    )
+    if provider_message:
+        diagnostic = f"{diagnostic} {provider_message}"
+
+    if error.code == 429:
+        return ChatProviderError(
+            "The farm assistant has reached its current usage limit. Please try again later.",
+            status_code=429,
+            diagnostic=diagnostic,
+        )
+    if error.code in (400, 401, 403):
+        return ChatProviderError(
+            "The farm assistant is unavailable right now. Please try again later.",
+            status_code=503,
+            diagnostic=diagnostic,
+        )
+    return ChatProviderError(
+        "The farm assistant is temporarily unavailable. Please try again later.",
+        diagnostic=diagnostic,
+    )
+
+
+def _iter_sse_events(response) -> Iterator[Tuple[str, str]]:
+    event_type = "message"
+    data_lines: List[str] = []
+    for raw_line in response:
+        line = raw_line.decode("utf-8").rstrip("\r\n")
+        if not line:
+            if data_lines:
+                yield event_type, "\n".join(data_lines)
+            event_type = "message"
+            data_lines = []
+        elif line.startswith("event:"):
+            event_type = line[6:].strip()
+        elif line.startswith("data:"):
+            data_lines.append(line[5:].lstrip())
+    if data_lines:
+        yield event_type, "\n".join(data_lines)
+
+
+def _open_interactions_stream(request: Request) -> HTTPResponse:
+    attempt = 0
+    while True:
+        try:
+            return urlopen(request, timeout=90)
+        except HTTPError as exc:
+            if exc.code != 503 or attempt >= 2:
+                raise
+            exc.close()
+            sleep(0.5 * (2**attempt))
+            attempt += 1
+
+
+def stream_chat_reply(
     message: str,
     history: List[Dict[str, str]],
     farm_context: Dict[str, Any],
-) -> str:
+) -> Iterator[str]:
     if not GEMINI_API_KEY:
         raise ChatConfigurationError(
             "Farm chat is not configured. Set GEMINI_API_KEY in the backend environment."
         )
     if not re.fullmatch(r"[A-Za-z0-9._-]+", GEMINI_MODEL):
         raise ChatConfigurationError(
-            "GEMINI_MODEL is invalid. Use a Gemini model name such as gemini-2.5-flash."
+            "GEMINI_MODEL is invalid. Use a Gemini model name such as gemini-3.8-flash."
         )
 
     system_instruction = (
@@ -46,73 +128,91 @@ def generate_chat_reply(
         "Current farm context (JSON):\n"
         f"{json.dumps(farm_context, ensure_ascii=True, default=str)}"
     )
-    contents = [
-        {
-            "role": "model" if turn["role"] == "assistant" else "user",
-            "parts": [{"text": turn["content"]}],
-        }
+    transcript = [
+        f"{'Farm assistant' if turn['role'] == 'assistant' else 'Grower'}: "
+        f"{turn['content']}"
         for turn in history
     ]
-    contents.append({"role": "user", "parts": [{"text": message}]})
+    transcript.append(f"Grower: {message}")
     payload = json.dumps(
         {
-            "systemInstruction": {"parts": [{"text": system_instruction}]},
-            "contents": contents,
-            "generationConfig": {
-                "maxOutputTokens": 500,
-                "temperature": 0.4,
-            },
+            "model": GEMINI_MODEL,
+            "input": "\n\n".join(transcript),
+            "system_instruction": system_instruction,
+            "store": False,
+            "stream": True,
         }
     ).encode("utf-8")
-    endpoint = (
-        f"{GEMINI_API_BASE}/{quote(GEMINI_MODEL, safe='')}:generateContent"
-    )
     request = Request(
-        endpoint,
+        GEMINI_INTERACTIONS_ENDPOINT,
         data=payload,
         headers={
             "x-goog-api-key": GEMINI_API_KEY,
             "Content-Type": "application/json",
-            "Accept": "application/json",
+            "Accept": "text/event-stream",
         },
         method="POST",
     )
 
+    received_text = False
     try:
-        with urlopen(request, timeout=45) as response:
-            result = json.loads(response.read().decode("utf-8"))
+        with _open_interactions_stream(request) as response:
+            for event_type, event_data in _iter_sse_events(response):
+                if event_data == "[DONE]" or event_type == "done":
+                    break
+                try:
+                    event = json.loads(event_data)
+                except json.JSONDecodeError as exc:
+                    raise ChatProviderError(
+                        "The farm assistant is temporarily unavailable. Please try again later.",
+                        diagnostic="Gemini Interactions API returned an invalid stream event.",
+                    ) from exc
+
+                event_type = event.get("event_type", event_type)
+                if event_type == "step.delta":
+                    delta = event.get("delta")
+                    text = (
+                        delta.get("text")
+                        if isinstance(delta, dict) and delta.get("type") == "text"
+                        else None
+                    )
+                    if isinstance(text, str) and text:
+                        received_text = True
+                        yield text
+                elif event_type in ("interaction.failed", "error"):
+                    error_info = event.get("error")
+                    reason = (
+                        error_info.get("message")
+                        if isinstance(error_info, dict)
+                        else None
+                    )
+                    diagnostic = (
+                        f"Gemini Interactions API stream failed "
+                        f"(model {GEMINI_MODEL})."
+                    )
+                    if isinstance(reason, str):
+                        diagnostic = f"{diagnostic} {' '.join(reason.split())[:300]}"
+                    raise ChatProviderError(
+                        "The farm assistant is temporarily unavailable. Please try again later.",
+                        diagnostic=diagnostic,
+                    )
     except HTTPError as exc:
-        if exc.code == 429:
-            raise ChatProviderError(
-                "Gemini rate limit or usage quota reached. Check the Google AI Studio project quota and billing, then try again.",
-                status_code=429,
-            ) from exc
-        if exc.code in (400, 401, 403):
-            raise ChatProviderError(
-                "Gemini rejected the request or API key. Check GEMINI_API_KEY and GEMINI_MODEL in the backend environment.",
-                status_code=503,
-            ) from exc
-        raise ChatProviderError(
-            f"Gemini returned HTTP {exc.code}."
-        ) from exc
+        raise _provider_failure(exc) from exc
     except (TimeoutError, URLError) as exc:
         raise ChatProviderError(
-            "Gemini could not be reached. Check the backend network connection."
+            "The farm assistant is temporarily unavailable. Please try again later.",
+            diagnostic=(
+                "Could not reach Gemini Interactions API "
+                f"({type(exc).__name__})."
+            ),
         ) from exc
-    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise ChatProviderError("Gemini returned an invalid response.") from exc
-
-    try:
-        parts = result["candidates"][0]["content"]["parts"]
-    except (KeyError, IndexError, TypeError) as exc:
-        raise ChatProviderError("Gemini response did not contain a reply.") from exc
-
-    reply = "\n".join(
-        part["text"]
-        for part in parts
-        if isinstance(part, dict) and isinstance(part.get("text"), str)
-    )
-    if not reply.strip():
-        raise ChatProviderError("Gemini returned an empty reply.")
-
-    return reply.strip()
+    except UnicodeDecodeError as exc:
+        raise ChatProviderError(
+            "The farm assistant is temporarily unavailable. Please try again later.",
+            diagnostic="Gemini Interactions API stream was not valid UTF-8.",
+        ) from exc
+    if not received_text:
+        raise ChatProviderError(
+            "The farm assistant is temporarily unavailable. Please try again later.",
+            diagnostic="Gemini Interactions API stream completed without text output.",
+        )

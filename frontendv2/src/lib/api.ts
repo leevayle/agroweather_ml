@@ -18,6 +18,47 @@ export class ApiError extends Error {
   }
 }
 
+export function getUserErrorMessage(error: unknown, fallback: string): string {
+  return error instanceof ApiError ? error.message : fallback
+}
+
+function getHttpErrorMessage(path: string, status: number): string {
+  const isChat = path.startsWith('/chat')
+  const isWeather = path.startsWith('/weather') || path.startsWith('/forecast')
+  const isLogin = path === '/auth/login'
+  const isSignup = path === '/auth/signup'
+
+  if (status === 401) {
+    return isLogin
+      ? 'Email or password doesn’t match our records. Check your details and try again.'
+      : 'Your session has expired. Please sign in again.'
+  }
+  if (status === 403) return 'You don’t have permission to do that.'
+  if (status === 400 || status === 409) {
+    return isSignup
+      ? 'We couldn’t create your account. Check your details and try again.'
+      : 'Please check your information and try again.'
+  }
+  if (status === 422) return 'Please check your information and try again.'
+  if (status === 429) {
+    return isChat
+      ? 'The farm assistant is busy right now. Please try again shortly.'
+      : 'Please wait a moment and try again.'
+  }
+  if (status >= 500) {
+    return isChat
+      ? 'The farm assistant is temporarily unavailable. Please try again later.'
+      : isWeather
+        ? 'Weather data is temporarily unavailable. Please try again later.'
+        : 'We couldn’t complete that right now. Please try again later.'
+  }
+  return isChat
+    ? 'The farm assistant couldn’t reply. Please try again.'
+    : isWeather
+      ? 'Weather data couldn’t be loaded. Please try again.'
+      : 'Something went wrong. Please try again.'
+}
+
 export interface AuthUser {
   id: string
   email: string
@@ -129,9 +170,8 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
     response = await fetch(`${API_BASE}${path}`, { ...init, headers })
   } catch (error) {
     if (error instanceof TypeError) {
-      const apiAddress = API_BASE || window.location.origin
       throw new ApiError(
-        `Cannot reach the AgroWeather API at ${apiAddress}. Start the backend or configure VITE_API_URL to its reachable address.`,
+        'We’re having trouble connecting. Check your connection and try again.',
         0,
       )
     }
@@ -149,11 +189,7 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
   }
 
   if (!response.ok) {
-    const detail =
-      data && typeof data === 'object' && 'detail' in data
-        ? String((data as { detail: unknown }).detail)
-        : `Request failed (${response.status})`
-    throw new ApiError(detail, response.status)
+    throw new ApiError(getHttpErrorMessage(path, response.status), response.status)
   }
 
   return data as T
@@ -211,12 +247,106 @@ export async function fetchForecast(days = 7): Promise<ForecastResponse> {
   return requestJson<ForecastResponse>(`/forecast?days=${days}`)
 }
 
-export async function sendFarmChat(
+export async function streamFarmChat(
   message: string,
   history: ChatTurn[],
-): Promise<{ reply: string }> {
-  return requestJson<{ reply: string }>('/chat', {
-    method: 'POST',
-    body: JSON.stringify({ message, history: history.slice(-10) }),
+  onText: (text: string) => void,
+): Promise<string> {
+  const headers = new Headers({
+    Accept: 'text/event-stream',
+    'Content-Type': 'application/json',
   })
+  const token = getToken()
+  if (token) headers.set('Authorization', `Bearer ${token}`)
+
+  let response: Response
+  try {
+    response = await fetch(`${API_BASE}/chat`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ message, history: history.slice(-10) }),
+    })
+  } catch (error) {
+    if (error instanceof TypeError) {
+      throw new ApiError(
+        'We’re having trouble connecting. Check your connection and try again.',
+        0,
+      )
+    }
+    throw error
+  }
+
+  if (!response.ok) {
+    throw new ApiError(getHttpErrorMessage('/chat', response.status), response.status)
+  }
+  if (!response.body) {
+    throw new ApiError(
+      'The farm assistant couldn’t reply. Please try again.',
+      response.status,
+    )
+  }
+
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  let reply = ''
+
+  const handleEvent = (block: string) => {
+    let eventType = 'message'
+    const dataLines: string[] = []
+    for (const line of block.split(/\r?\n/)) {
+      if (line.startsWith('event:')) eventType = line.slice(6).trim()
+      if (line.startsWith('data:')) dataLines.push(line.slice(5).trimStart())
+    }
+    if (eventType === 'done' || dataLines.length === 0) return
+
+    const eventData = dataLines.join('\n')
+    if (eventType === 'token') {
+      const tokenData: unknown = JSON.parse(eventData)
+      if (
+        tokenData &&
+        typeof tokenData === 'object' &&
+        'text' in tokenData &&
+        typeof tokenData.text === 'string'
+      ) {
+        reply += tokenData.text
+        onText(reply)
+      }
+    } else if (eventType === 'error') {
+      const errorData: unknown = JSON.parse(eventData)
+      const message =
+        errorData &&
+        typeof errorData === 'object' &&
+        'message' in errorData &&
+        typeof errorData.message === 'string'
+          ? errorData.message
+          : 'The farm assistant couldn’t reply. Please try again.'
+      throw new ApiError(message, 502)
+    }
+  }
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
+      buffer += decoder.decode(value, { stream: !done })
+      const blocks = buffer.split(/\r?\n\r?\n/)
+      buffer = blocks.pop() ?? ''
+      for (const block of blocks) handleEvent(block)
+      if (done) break
+    }
+    if (buffer.trim()) handleEvent(buffer)
+  } catch (error) {
+    await reader.cancel()
+    throw error
+  } finally {
+    reader.releaseLock()
+  }
+
+  if (!reply.trim()) {
+    throw new ApiError(
+      'The farm assistant couldn’t reply. Please try again.',
+      response.status,
+    )
+  }
+  return reply.trim()
 }

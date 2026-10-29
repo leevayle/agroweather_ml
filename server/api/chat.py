@@ -1,8 +1,10 @@
+import json
 import logging
 from datetime import date, timedelta
 from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from pymongo.errors import PyMongoError
 
@@ -12,7 +14,7 @@ from server.services.auth_service import serialize_user
 from server.services.chat_service import (
     ChatConfigurationError,
     ChatProviderError,
-    generate_chat_reply,
+    stream_chat_reply,
 )
 from server.services.forecast_service import get_cache_status, get_cached_forecast
 from server.services.weather_service import get_current_weather
@@ -31,10 +33,6 @@ class ChatRequest(BaseModel):
     history: list[ChatTurn] = Field(default_factory=list, max_length=10)
 
 
-class ChatResponse(BaseModel):
-    reply: str
-
-
 def _farm_context(current_user, weather: Optional[dict], forecast: list) -> dict:
     user = serialize_user(current_user)
     return {
@@ -49,7 +47,7 @@ def _farm_context(current_user, weather: Optional[dict], forecast: list) -> dict
     }
 
 
-@router.post("", response_model=ChatResponse)
+@router.post("")
 def farm_chat(
     body: ChatRequest,
     current_user=Depends(get_current_user),
@@ -103,18 +101,36 @@ def farm_chat(
     context = _farm_context(current_user, weather, forecast)
     history = [turn.dict() for turn in body.history]
 
-    try:
-        reply = generate_chat_reply(message, history, context)
-    except ChatConfigurationError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=str(exc),
-        ) from exc
-    except ChatProviderError as exc:
-        logger.warning("Farm chat provider request failed: %s", exc)
-        raise HTTPException(
-            status_code=exc.status_code,
-            detail=str(exc),
-        ) from exc
+    def response_events():
+        try:
+            for text in stream_chat_reply(message, history, context):
+                yield f"event: token\ndata: {json.dumps({'text': text})}\n\n"
+        except ChatConfigurationError as exc:
+            logger.error("Farm chat configuration error: %s", exc)
+            yield (
+                "event: error\ndata: "
+                f"{json.dumps({'message': 'The farm assistant is unavailable right now. Please try again later.'})}\n\n"
+            )
+        except ChatProviderError as exc:
+            logger.warning(
+                "Farm chat provider request failed (status=%s): %s",
+                exc.status_code,
+                exc.diagnostic or "No additional provider details.",
+            )
+            yield f"event: error\ndata: {json.dumps({'message': str(exc)})}\n\n"
+        except Exception:
+            logger.exception("Unexpected error while streaming a farm chat reply.")
+            yield (
+                "event: error\ndata: "
+                f"{json.dumps({'message': 'The farm assistant is temporarily unavailable. Please try again later.'})}\n\n"
+            )
+        yield "event: done\ndata: [DONE]\n\n"
 
-    return {"reply": reply}
+    return StreamingResponse(
+        response_events(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
