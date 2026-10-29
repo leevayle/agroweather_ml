@@ -124,12 +124,16 @@ const navItems: { id: Page; label: string; icon: IconName }[] = [
 
 function PublicNav({ go }: { go: (page: Page) => void }) {
   const [open, setOpen] = useState(false)
+  const scrollToSection = (sectionId: string) => {
+    setOpen(false)
+    document.getElementById(sectionId)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
   return (
     <header className="public-nav">
       <Logo onClick={() => go('landing')} />
       <nav className={open ? 'public-links open' : 'public-links'}>
-        <button onClick={() => { go('landing'); setOpen(false) }}>Features</button>
-        <button onClick={() => { go('landing'); setOpen(false) }}>How it works</button>
+        <button onClick={() => scrollToSection('features')}>Features</button>
+        <button onClick={() => scrollToSection('how-it-works')}>How it works</button>
         <button onClick={() => { go('signin'); setOpen(false) }}>Sign in</button>
         <Button onClick={() => { go('signup'); setOpen(false) }}>Get started</Button>
       </nav>
@@ -165,7 +169,7 @@ function Landing({ go }: { go: (page: Page) => void }) {
           </div>
         </section>
 
-        <section className="section features">
+        <section className="section features" id="features">
           <div className="section-heading"><span className="eyebrow">One view of your farm</span><h2>Less guessing. Better growing.</h2><p>AgroWeather turns field data into simple, timely decisions.</p></div>
           <div className="feature-grid">
             {[
@@ -176,7 +180,7 @@ function Landing({ go }: { go: (page: Page) => void }) {
           </div>
         </section>
 
-        <section className="how section">
+        <section className="how section" id="how-it-works">
           <div className="section-heading"><span className="eyebrow">Simple from day one</span><h2>From field to forecast in three steps</h2></div>
           <div className="steps">
             {[
