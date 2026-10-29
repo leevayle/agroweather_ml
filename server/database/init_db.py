@@ -21,6 +21,7 @@ def create_index_if_missing(
     keys,
     name,
     unique=False,
+    partial_filter_expression=None,
 ):
     """
     Create an index only if an equivalent index does not
@@ -50,6 +51,7 @@ def create_index_if_missing(
         keys,
         unique=unique,
         name=name,
+        partialFilterExpression=partial_filter_expression,
     )
 
     print(
@@ -167,6 +169,17 @@ def create_indexes():
             ("date", ASCENDING),
         ],
         "user_calendar_date",
+    )
+
+    create_index_if_missing(
+        calendar_collection,
+        [
+            ("user_id", ASCENDING),
+            ("task_key", ASCENDING),
+        ],
+        "unique_user_calendar_task",
+        unique=True,
+        partial_filter_expression={"task_key": {"$exists": True}},
     )
 
 

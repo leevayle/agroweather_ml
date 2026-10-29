@@ -233,7 +233,7 @@ def generate_crop_insights(farm_context: Dict[str, Any]) -> List[Dict[str, Any]]
         '{"insights":[{"crop":"crop name","headline":"short summary",'
         '"activities":[{"activity":"specific task","timing":"best time or '
         'forecast date","reason":"weather-based reason"}],'
-        '"optimal_conditions":"conditions that suit this crop now",'
+        '"optimal_conditions":"a concise summary in exactly two sentences",'
         '"harvest_guidance":"careful harvest advice"}]}\n\n'
         "Provide one insight for each saved crop and one to three useful "
         "activities per crop. Ground weather claims in the supplied "
@@ -244,7 +244,9 @@ def generate_crop_insights(farm_context: Dict[str, Any]) -> List[Dict[str, Any]]
         "ready to harvest or predict a harvest date without planting date, "
         "variety, or growth-stage information; instead explain what signs "
         "to check. If weather data is missing, say so and keep advice "
-        "general. Keep each field concise and actionable."
+        "general. Write optimal_conditions as exactly two short, plain-language "
+        "sentences summarizing the most relevant crop conditions and current "
+        "weather fit. Keep each other field concise and actionable."
     )
     response_text = "".join(stream_chat_reply(prompt, [], farm_context)).strip()
     if response_text.startswith("```"):

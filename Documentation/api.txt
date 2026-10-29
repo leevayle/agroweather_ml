@@ -145,6 +145,7 @@ unnecessarily recalculate the same forecast.
 | /redoc            | GET    | Alternative documentation        |
 | /chat             | POST   | Authenticated Gemini farm chat    |
 | /chat/insights     | GET    | Authenticated crop insights       |
+| /calendar/tasks   | POST   | Save a crop activity to calendar  |
 +-------------------+--------+----------------------------------+
 
 
@@ -1023,6 +1024,48 @@ Errors:
         401 - missing or invalid access token
         429 - Gemini usage limit reached
         503 - assistant configuration or provider unavailable
+
+
+    30. POST /calendar/tasks
+    ========================
+
+    Purpose:
+        Saves a recommended crop activity to the authenticated user's
+        AgroWeather calendar. Repeated requests for the same crop, activity,
+        and timing do not create duplicate tasks.
+
+    Authentication:
+        Include the bearer token returned by /auth/login or /auth/signup:
+
+        Authorization: Bearer <access_token>
+
+    Request:
+
+        POST /calendar/tasks
+        Content-Type: application/json
+
+        {
+          "crop": "Maize",
+          "activity": "Clear and maintain field drainage channels",
+          "timing": "2026-10-30",
+          "reason": "Reduce the risk of waterlogging ahead of forecast rain."
+        }
+
+    Response:
+
+        {
+          "message": "Task added to your calendar.",
+          "created": true
+        }
+
+        A repeated request returns `created: false` and reports that the task
+        is already in the calendar. Tasks are stored in the `calendar_tasks`
+        MongoDB collection and associated with the authenticated user.
+
+    Errors:
+        401 - missing or invalid access token
+        422 - missing or invalid task information
+        503 - calendar storage is temporarily unavailable
 
 
     END OF AGROWEATHER BACKEND API REFERENCE

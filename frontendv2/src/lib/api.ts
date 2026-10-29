@@ -25,6 +25,7 @@ export function getUserErrorMessage(error: unknown, fallback: string): string {
 function getHttpErrorMessage(path: string, status: number): string {
   const isChat = path.startsWith('/chat')
   const isInsights = path === '/chat/insights'
+  const isCalendar = path.startsWith('/calendar')
   const isWeather = path.startsWith('/weather') || path.startsWith('/forecast')
   const isLogin = path === '/auth/login'
   const isSignup = path === '/auth/signup'
@@ -51,6 +52,8 @@ function getHttpErrorMessage(path: string, status: number): string {
   if (status >= 500) {
     return isInsights
       ? 'Crop insights are temporarily unavailable. Please try again later.'
+      : isCalendar
+      ? 'We couldn’t add this task to your calendar. Please try again.'
       : isChat
       ? 'The farm assistant is temporarily unavailable. Please try again later.'
       : isWeather
@@ -59,6 +62,8 @@ function getHttpErrorMessage(path: string, status: number): string {
   }
   return isInsights
     ? 'Crop insights couldn’t be loaded. Please try again.'
+    : isCalendar
+    ? 'We couldn’t add this task to your calendar. Please try again.'
     : isChat
     ? 'The farm assistant couldn’t reply. Please try again.'
     : isWeather
@@ -148,6 +153,11 @@ export interface CropInsight {
   activities: CropInsightActivity[]
   optimal_conditions: string
   harvest_guidance: string
+}
+
+export interface CalendarTaskResponse {
+  message: string
+  created: boolean
 }
 
 function getToken(): string | null {
@@ -273,6 +283,18 @@ export async function fetchCropInsights(): Promise<{
   message?: string
 }> {
   return requestJson<{ insights: CropInsight[]; message?: string }>('/chat/insights')
+}
+
+export async function addCalendarTask(task: {
+  crop: string
+  activity: string
+  timing: string
+  reason: string
+}): Promise<CalendarTaskResponse> {
+  return requestJson<CalendarTaskResponse>('/calendar/tasks', {
+    method: 'POST',
+    body: JSON.stringify(task),
+  })
 }
 
 export async function streamFarmChat(

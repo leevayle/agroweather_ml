@@ -7,6 +7,7 @@ import {
   getStoredUser,
   login,
   signup,
+  addCalendarTask,
   fetchCropInsights,
   streamFarmChat,
   updateMyCrops,
@@ -50,6 +51,7 @@ type IconName =
   | 'plus'
   | 'send'
   | 'chat'
+  | 'calendar'
   | 'bell'
   | 'menu'
   | 'close'
@@ -76,6 +78,7 @@ const iconPaths: Record<IconName, ReactNode> = {
   plus: <path d="M12 5v14M5 12h14" />,
   send: <><path d="m22 2-7 20-4-9-9-4 20-7Z" /><path d="M22 2 11 13" /></>,
   chat: <><path d="M20 11.5a7.5 7.5 0 0 1-7.5 7.5H6l-3 2v-6a7.5 7.5 0 1 1 17-3.5Z" /><path d="M8 11h.01M12 11h.01M16 11h.01" /></>,
+  calendar: <><rect x="3" y="5" width="18" height="16" rx="2" /><path d="M16 3v4M8 3v4M3 10h18" /></>,
   bell: <><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9ZM10 21h4" /></>,
   menu: <path d="M4 7h16M4 12h16M4 17h16" />,
   close: <path d="m6 6 12 12M18 6 6 18" />,
@@ -538,7 +541,16 @@ function Insights({
   const [streamingReply, setStreamingReply] = useState('')
   const [sending, setSending] = useState(false)
   const [chatOpen, setChatOpen] = useState(false)
+  const [calendarTaskStates, setCalendarTaskStates] = useState<Record<string, 'adding' | 'added'>>({})
+  const [calendarNotice, setCalendarNotice] = useState<{ id: number; kind: 'success' | 'error'; message: string } | null>(null)
   const chatThread = useRef<HTMLDivElement>(null)
+  const calendarNoticeId = useRef(0)
+  useEffect(() => {
+    if (!calendarNotice) return
+    const timeout = window.setTimeout(() => setCalendarNotice(null), 4200)
+    return () => window.clearTimeout(timeout)
+  }, [calendarNotice])
+
   useEffect(() => {
     sessionStorage.setItem(`agroweather_chat_${user.id}`, JSON.stringify(messages))
     if (chatOpen) {
@@ -573,19 +585,54 @@ function Insights({
     }
   }
 
+  const addActivityToCalendar = async (
+    crop: string,
+    activity: { activity: string; timing: string; reason: string },
+  ) => {
+    const taskKey = `${crop}:${activity.activity}:${activity.timing}`
+    if (calendarTaskStates[taskKey]) return
+
+    setCalendarTaskStates((current) => ({ ...current, [taskKey]: 'adding' }))
+    try {
+      const result = await addCalendarTask({ crop, ...activity })
+      setCalendarTaskStates((current) => ({ ...current, [taskKey]: 'added' }))
+      setCalendarNotice({
+        id: ++calendarNoticeId.current,
+        kind: 'success',
+        message: result.created ? 'Added to your calendar.' : 'This task is already in your calendar.',
+      })
+    } catch (error) {
+      setCalendarTaskStates((current) => {
+        const next = { ...current }
+        delete next[taskKey]
+        return next
+      })
+      setCalendarNotice({
+        id: ++calendarNoticeId.current,
+        kind: 'error',
+        message: getUserErrorMessage(error, 'We couldn’t add this task. Please try again.'),
+      })
+    }
+  }
+
   return <main className="app-content insights-page"><PageHeader eyebrow="Personalized for your crops" title="Weather insights" body="Crop guidance shaped by recent weather, current conditions, and your 7-day forecast."><Button variant="secondary" onClick={onRefreshInsights}>{insightsLoading ? 'Updating…' : 'Refresh'}</Button></PageHeader>
     <section className="crop-insights-section" aria-label="Personalized crop insights">
-      <div className="crop-insights-heading"><div><span className="eyebrow"><Icon name="spark" size={14} /> This week on your farm</span><h2>Recommended for your crops</h2><p>Practical next steps based on your farm’s recent and upcoming conditions.</p></div><span className="insight-source-pill"><Icon name="cloud" size={14} /> Gemini + local weather</span></div>
+      <div className="crop-insights-heading"><div><span className="eyebrow"><Icon name="spark" size={14} /> This week on your farm</span><h2>Recommended for your crops</h2><p>Practical next steps based on your farm’s recent and upcoming conditions.</p></div><span className="insight-source-pill"><Icon name="cloud" size={14} /> AI + weather</span></div>
       {insightsLoading && <div className="crop-insight-loading" role="status"><span className="insight-orbit"><Icon name="spark" /></span><div><b>Preparing your crop brief</b><p>Matching your crops with recent weather and the week ahead…</p></div><span className="typing-dots"><i /><i /><i /></span></div>}
       {insightsError && !insightsLoading && <div className="crop-insight-message error" role="alert"><Icon name="cloud" /><p>{insightsError}</p><button onClick={onRefreshInsights}>Try again</button></div>}
       {!insightsLoading && !insightsError && cropInsights.length === 0 && <div className="crop-insight-message"><span className="icon-tile"><Icon name="leaf" /></span><p>Add crops to your farm profile to get weather-based recommendations tailored to what you grow.</p></div>}
       {!insightsLoading && cropInsights.length > 0 && <div className="crop-insight-grid">{cropInsights.map((insight) => <article className="crop-insight-card" key={insight.crop}>
-        <div className="crop-insight-card-head"><span className="insight-icon green"><Icon name="leaf" /></span><div><span className="tag green-tag">{insight.crop}</span><h3>{insight.headline}</h3></div></div>
-        <div className="crop-insight-conditions"><span className="overline">Conditions to aim for</span><p>{insight.optimal_conditions}</p></div>
-        <div className="crop-actions"><span className="overline">Best next steps</span>{insight.activities.map((activity, index) => <div className="crop-action" key={`${activity.activity}-${index}`}><span className="crop-action-number">{String(index + 1).padStart(2, '0')}</span><div><h4>{activity.activity}</h4><span className="crop-action-timing"><Icon name="clock" size={13} /> {activity.timing}</span><p>{activity.reason}</p></div></div>)}</div>
+        <div className="crop-insight-card-head"><span className="crop-leaf-mark"><Icon name="leaf" size={18} /></span><h3>{insight.crop}</h3></div>
+        <p className="crop-insight-conditions">{insight.optimal_conditions}</p>
+        <div className="crop-actions"><span className="overline">Next steps</span>{insight.activities.map((activity, index) => {
+          const taskKey = `${insight.crop}:${activity.activity}:${activity.timing}`
+          const taskState = calendarTaskStates[taskKey]
+          return <div className="crop-action" key={`${activity.activity}-${index}`}><span className="crop-action-number">{String(index + 1).padStart(2, '0')}</span><div className="crop-action-content"><h4>{activity.activity}</h4><span className="crop-action-timing"><Icon name="clock" size={14} /> {activity.timing}</span><p>{activity.reason}</p><button className={`calendar-add-button ${taskState === 'added' ? 'is-added' : ''}`} type="button" disabled={Boolean(taskState)} onClick={() => void addActivityToCalendar(insight.crop, activity)}>{taskState === 'adding' ? <><span className="button-spinner" /> Adding…</> : taskState === 'added' ? <><Icon name="check" size={15} /> Added to calendar</> : <><Icon name="calendar" size={15} /> Add to calendar</>}</button></div></div>
+        })}</div>
         <div className="harvest-note"><Icon name="sun" size={16} /><p><b>Harvest watch</b>{insight.harvest_guidance}</p></div>
       </article>)}</div>}
     </section>
+    {calendarNotice && <div key={calendarNotice.id} className={`calendar-toast ${calendarNotice.kind}`} role={calendarNotice.kind === 'error' ? 'alert' : 'status'}><Icon name={calendarNotice.kind === 'success' ? 'check' : 'cloud'} size={18} /><span>{calendarNotice.message}</span><button type="button" aria-label="Dismiss notification" onClick={() => setCalendarNotice(null)}><Icon name="close" size={16} /></button></div>}
     <div className="farm-chat-widget" onMouseEnter={() => setChatOpen(true)} onMouseLeave={() => {
       if (!document.querySelector('.composer-input textarea:focus')) setChatOpen(false)
     }}>
@@ -594,7 +641,7 @@ function Insights({
         <div className="chat-thread" ref={chatThread} aria-live="polite">
           {messages.length === 0 && <div className="chat-message assistant"><b>AgroWeather assistant</b><p>Hi{user.first_name ? ` ${user.first_name}` : ''}! I can help you plan around your crops and local weather. What would you like to know?</p></div>}
           {messages.map((message, index) => <article className={`chat-message ${message.role}`} key={`${index}-${message.role}`}><b>{message.role === 'user' ? 'You' : 'AgroWeather assistant'}</b><p>{message.content}</p></article>)}
-          {sending && <article className="chat-message assistant live-reply" role="status"><b>AgroWeather assistant</b>{streamingReply ? <p>{streamingReply}</p> : <span className="typing-dots" aria-label="Waiting for a reply"><i /><i /><i /></span>}</article>}
+          {sending && (streamingReply ? <article className="chat-message assistant live-reply"><b>AgroWeather assistant</b><p>{streamingReply}</p></article> : <article className="chat-message assistant live-reply waiting" role="status" aria-label="Waiting for a reply"><span className="typing-dots"><i /><i /><i /></span></article>)}
           {chatError && <article className="chat-message assistant chat-failure" role="alert"><b>AgroWeather assistant</b><p>{chatError}</p></article>}
         </div>
       </section>
