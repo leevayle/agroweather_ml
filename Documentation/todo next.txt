@@ -1,0 +1,5 @@
+Add user roles when saving them
+Add crop planting date for each user crop ( so we know when we can harvest)
+Add admin portal for management of users and stations
+Change favicon to logo
+Remove the cresent-like active nav selector in the admin dash (it gives away ai vibes)
