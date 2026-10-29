@@ -1,4 +1,20 @@
-import { FormEvent, ReactNode, useState } from 'react'
+import { FormEvent, ReactNode, useEffect, useRef, useState } from 'react'
+import {
+  clearSession,
+  fetchCurrentWeather,
+  fetchForecast,
+  fetchMe,
+  getStoredUser,
+  login,
+  signup,
+  sendFarmChat,
+  updateMyCrops,
+  ApiError,
+  type AuthUser,
+  type ChatTurn,
+  type CurrentWeatherResponse,
+  type ForecastDay,
+} from './lib/api'
 
 type Page =
   | 'landing'
@@ -77,9 +93,9 @@ function Logo({ onClick, light = false }: { onClick?: () => void; light?: boolea
   )
 }
 
-const Button = ({ children, variant = 'primary', icon, onClick, type = 'button', className = '' }: {
-  children: ReactNode; variant?: 'primary' | 'secondary' | 'ghost' | 'amber'; icon?: IconName; onClick?: () => void; type?: 'button' | 'submit'; className?: string
-}) => <button type={type} onClick={onClick} className={`btn btn-${variant} ${className}`}>{children}{icon && <Icon name={icon} size={18} />}</button>
+const Button = ({ children, variant = 'primary', icon, onClick, type = 'button', className = '', disabled = false }: {
+  children: ReactNode; variant?: 'primary' | 'secondary' | 'ghost' | 'amber'; icon?: IconName; onClick?: () => void; type?: 'button' | 'submit'; className?: string; disabled?: boolean
+}) => <button type={type} onClick={onClick} disabled={disabled} className={`btn btn-${variant} ${className}`}>{children}{icon && <Icon name={icon} size={18} />}</button>
 
 const navItems: { id: Page; label: string; icon: IconName }[] = [
   { id: 'dashboard', label: 'Dashboard', icon: 'home' },
@@ -88,14 +104,6 @@ const navItems: { id: Page; label: string; icon: IconName }[] = [
   { id: 'insights', label: 'AI Insights', icon: 'spark' },
   { id: 'profile', label: 'Profile', icon: 'user' },
   { id: 'settings', label: 'Settings', icon: 'settings' },
-]
-
-const forecasts = [
-  { day: 'Today', icon: 'sun' as IconName, hi: 26, lo: 14, rain: 5 },
-  { day: 'Tue', icon: 'cloud' as IconName, hi: 23, lo: 13, rain: 20 },
-  { day: 'Wed', icon: 'rain' as IconName, hi: 19, lo: 11, rain: 75 },
-  { day: 'Thu', icon: 'cloud' as IconName, hi: 21, lo: 12, rain: 30 },
-  { day: 'Fri', icon: 'sun' as IconName, hi: 25, lo: 14, rain: 10 },
 ]
 
 function PublicNav({ go }: { go: (page: Page) => void }) {
@@ -123,7 +131,7 @@ function Landing({ go }: { go: (page: Page) => void }) {
           <div className="hero-copy">
             <span className="eyebrow"><Icon name="spark" size={15} /> Weather intelligence, built for growers</span>
             <h1>Farm with more certainty.</h1>
-            <p>Hyperlocal weather, crop-aware alerts, and practical AI guidance—all in one calm workspace for your farm.</p>
+            <p>Current weather readings, forecasts, and saved crop preferences—all in one calm workspace for your farm.</p>
             <div className="hero-actions">
               <Button icon="arrow" onClick={() => go('signup')}>Start for free</Button>
               <Button variant="secondary" onClick={() => go('dashboard')}>Explore dashboard</Button>
@@ -133,7 +141,7 @@ function Landing({ go }: { go: (page: Page) => void }) {
           <div className="hero-visual">
             <img className="field-photo" src="https://images.unsplash.com/photo-1560493676-04071c5f467b?auto=format&fit=crop&w=1200&q=85" alt="Rows of green crops on a farm" />
             <div className="live-card">
-              <div className="live-head"><div><span className="overline">North field · Live</span><strong>Clear skies</strong></div><span className="status-dot">Online</span></div>
+              <div className="live-head"><div><span className="overline">Field weather · Preview</span><strong>Sample conditions</strong></div><span className="status-dot">Preview</span></div>
               <div className="hero-temp"><Icon name="sun" size={48} /><span>24°</span></div>
               <div className="mini-metrics"><span><Icon name="droplet" size={16} /> 62%</span><span><Icon name="wind" size={16} /> 9 km/h</span><span><Icon name="rain" size={16} /> 0 mm</span></div>
             </div>
@@ -146,7 +154,7 @@ function Landing({ go }: { go: (page: Page) => void }) {
           <div className="feature-grid">
             {[
               ['cloud', 'Field-level weather', 'Live conditions and forecasts tuned to your station, not the nearest airport.'],
-              ['spark', 'Practical AI insights', 'Plain-language recommendations based on your crops, growth stage, and weather.'],
+              ['spark', 'Weather insights', 'Review current station readings and forecast conditions in one place.'],
               ['leaf', 'Crop monitoring', 'Track every field’s health, tasks, and risks without clutter or complex tools.'],
             ].map(([icon, title, body]) => <article className="feature-card" key={title}><span className={`icon-tile ${icon === 'cloud' ? 'blue' : ''}`}><Icon name={icon as IconName} /></span><h3>{title}</h3><p>{body}</p><button onClick={() => go('signup')}>Learn more <Icon name="arrow" size={16} /></button></article>)}
           </div>
@@ -157,8 +165,8 @@ function Landing({ go }: { go: (page: Page) => void }) {
           <div className="steps">
             {[
               ['01', 'Create your farm', 'Add your location, fields, and the crops you’re growing.'],
-              ['02', 'Pair your station', 'Enter the code on your AgroWeather station to connect live data.'],
-              ['03', 'Grow with confidence', 'Receive daily forecasts, alerts, and crop-specific guidance.'],
+              ['02', 'Add station details', 'Save the station code associated with your account.'],
+              ['03', 'Plan with confidence', 'Review available forecasts and your saved farm information.'],
             ].map(([n, title, body]) => <article className="step" key={n}><span>{n}</span><div><h3>{title}</h3><p>{body}</p></div></article>)}
           </div>
         </section>
@@ -173,9 +181,70 @@ function Landing({ go }: { go: (page: Page) => void }) {
   )
 }
 
-function AuthPage({ mode, go }: { mode: 'signin' | 'signup'; go: (page: Page) => void }) {
+function AuthPage({
+  mode,
+  go,
+  onSuccess,
+}: {
+  mode: 'signin' | 'signup'
+  go: (page: Page) => void
+  onSuccess: (user: AuthUser) => void
+}) {
   const [step, setStep] = useState(1)
-  const handleSubmit = (e: FormEvent) => { e.preventDefault(); if (mode === 'signin' || step === 3) go('dashboard'); else setStep(step + 1) }
+  const [form, setForm] = useState({
+    firstName: '',
+    email: '',
+    password: '',
+    farmName: '',
+    location: '',
+    acres: '',
+    sizeUnit: 'acres',
+    crops: [] as string[],
+    stationCode: '',
+  })
+  const [error, setError] = useState('')
+  const [loading, setLoading] = useState(false)
+
+  const toggleCrop = (crop: string) => {
+    setForm((current) => ({
+      ...current,
+      crops: current.crops.includes(crop)
+        ? current.crops.filter((item) => item !== crop)
+        : [...current.crops, crop],
+    }))
+  }
+
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    setError('')
+    if (mode === 'signup' && step < 3) {
+      setStep((current) => current + 1)
+      return
+    }
+
+    setLoading(true)
+    try {
+      const result =
+        mode === 'signin'
+          ? await login(form.email.trim(), form.password)
+          : await signup({
+              email: form.email.trim(),
+              password: form.password,
+              first_name: form.firstName.trim(),
+              farm_name: form.farmName.trim(),
+              location: form.location.trim(),
+              acres: form.acres.trim() ? `${form.acres.trim()} ${form.sizeUnit}` : '',
+              crops: form.crops,
+              station_code: form.stationCode.trim() || null,
+            })
+      onSuccess(result.user)
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : 'Authentication failed.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
   return (
     <div className="auth-page">
       <div className="auth-brand">
@@ -186,23 +255,25 @@ function AuthPage({ mode, go }: { mode: 'signin' | 'signup'; go: (page: Page) =>
       <div className="auth-panel">
         <button className="back-link" onClick={() => go('landing')}>← Back to home</button>
         <div className="auth-form">
-          {mode === 'signup' && <div className="stepper">{[1,2,3].map((n) => <span key={n} className={step >= n ? 'active' : ''}><i>{step > n ? '✓' : n}</i><small>{['Account', 'Farm info', 'Pair station'][n-1]}</small></span>)}</div>}
+        {mode === 'signup' && <div className="stepper">{[1,2,3].map((n) => <span key={n} className={step >= n ? 'active' : ''}><i>{step > n ? '✓' : n}</i><small>{['Account', 'Farm info', 'Station code'][n-1]}</small></span>)}</div>}
           <span className="eyebrow">{mode === 'signin' ? 'Welcome back' : `Step ${step} of 3`}</span>
-          <h2>{mode === 'signin' ? 'Sign in to your farm' : step === 1 ? 'Create your account' : step === 2 ? 'Tell us about your farm' : 'Pair your weather station'}</h2>
-          <p>{mode === 'signin' ? 'Your fields and latest insights are waiting.' : step === 3 ? 'Enter the pairing code shown on your station.' : 'A few details and your workspace will be ready.'}</p>
-          <form onSubmit={handleSubmit}>
+        <h2>{mode === 'signin' ? 'Sign in to your farm' : step === 1 ? 'Create your account' : step === 2 ? 'Tell us about your farm' : 'Add station details'}</h2>
+          <p>{mode === 'signin' ? 'Your fields and latest insights are waiting.' : step === 3 ? 'A station code is optional and will be saved with your account.' : 'A few details and your workspace will be ready.'}</p>
+          {error && <div className="auth-error" role="alert">{error}</div>}
+          <form onSubmit={(event) => void handleSubmit(event)}>
             {mode === 'signin' || step === 1 ? <>
-              {mode === 'signup' && <label>Full name<input required placeholder="e.g. Sarah Mitchell" /></label>}
-              <label>Email address<input required type="email" placeholder="you@farm.com" /></label>
-              <label>Password<input required type="password" placeholder="At least 8 characters" /></label>
-              {mode === 'signin' && <div className="form-row"><label className="checkbox"><input type="checkbox" /> Keep me signed in</label><button type="button">Forgot password?</button></div>}
+              {mode === 'signup' && <label>First name<input required autoComplete="given-name" value={form.firstName} onChange={(event) => setForm({ ...form, firstName: event.target.value })} placeholder="e.g. Sarah" /></label>}
+              <label>Email address<input required autoComplete="email" type="email" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} placeholder="you@farm.com" /></label>
+              <label>Password<input required autoComplete={mode === 'signin' ? 'current-password' : 'new-password'} minLength={6} type="password" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} placeholder="At least 6 characters" /></label>
             </> : step === 2 ? <>
-              <label>Farm name<input required placeholder="e.g. Willow Creek Farm" /></label>
-              <label>Farm location<input required placeholder="Town or postcode" /></label>
-              <div className="two-col"><label>Farm size<input required placeholder="48" /></label><label>Unit<select><option>Hectares</option><option>Acres</option></select></label></div>
-            </> : <div className="pair-box"><span className="icon-tile"><Icon name="station" /></span><label>Station pair code<input className="code-input" defaultValue="AGR-8401" /></label><small>Find this 8-character code on the label beneath your station.</small></div>}
-            <Button type="submit" icon="arrow" className="full">{mode === 'signin' ? 'Sign in' : step === 3 ? 'Finish setup' : 'Continue'}</Button>
+              <label>Farm name<input required value={form.farmName} onChange={(event) => setForm({ ...form, farmName: event.target.value })} placeholder="e.g. Willow Creek Farm" /></label>
+              <label>Farm location<input required value={form.location} onChange={(event) => setForm({ ...form, location: event.target.value })} placeholder="Town or postcode" /></label>
+              <div className="two-col"><label>Farm size<input value={form.acres} onChange={(event) => setForm({ ...form, acres: event.target.value })} placeholder="Optional" /></label><label>Size unit<select aria-label="Farm size unit" value={form.sizeUnit} onChange={(event) => setForm({ ...form, sizeUnit: event.target.value })}><option value="acres">Acres</option><option value="hectares">Hectares</option></select></label></div>
+              <div className="signup-crops"><span>What do you grow?</span>{['Corn', 'Wheat', 'Soybeans', 'Rice', 'Cotton', 'Tomatoes', 'Potatoes', 'Sunflower', 'Barley', 'Canola'].map((crop) => <button key={crop} type="button" className={form.crops.includes(crop) ? 'selected' : ''} onClick={() => toggleCrop(crop)}>{crop}</button>)}</div>
+            </> : <div className="pair-box"><span className="icon-tile"><Icon name="station" /></span><label>Station code (optional)<input className="code-input" value={form.stationCode} onChange={(event) => setForm({ ...form, stationCode: event.target.value.toUpperCase() })} maxLength={32} placeholder="e.g. AGR-84F2" /></label><small>This is stored on your account. Station pairing itself is not available through the current backend API.</small></div>}
+            <Button type="submit" icon="arrow" className="full">{loading ? 'Please wait…' : mode === 'signin' ? 'Sign in' : step === 3 ? 'Create account' : 'Continue'}</Button>
           </form>
+          {mode === 'signup' && step > 1 && <button className="auth-previous" onClick={() => setStep(step - 1)}>Back</button>}
           <div className="auth-switch">{mode === 'signin' ? 'New to AgroWeather?' : 'Already have an account?'} <button onClick={() => go(mode === 'signin' ? 'signup' : 'signin')}>{mode === 'signin' ? 'Create account' : 'Sign in'}</button></div>
         </div>
       </div>
@@ -210,16 +281,34 @@ function AuthPage({ mode, go }: { mode: 'signin' | 'signup'; go: (page: Page) =>
   )
 }
 
-function AppShell({ page, go, children }: { page: Page; go: (p: Page) => void; children: ReactNode }) {
+function AppShell({
+  page,
+  go,
+  user,
+  onSignOut,
+  children,
+}: {
+  page: Page
+  go: (p: Page) => void
+  user: AuthUser
+  onSignOut: () => void
+  children: ReactNode
+}) {
+  const initials = user.first_name
+    .split(/\s+/)
+    .map((part) => part[0])
+    .join('')
+    .slice(0, 2)
+    .toUpperCase()
   return (
     <div className="app-shell">
       <aside className="sidebar">
         <Logo onClick={() => go('dashboard')} />
         <nav>{navItems.map(item => <button className={page === item.id ? 'active' : ''} key={item.id} onClick={() => go(item.id)}><Icon name={item.icon} /><span>{item.label}</span></button>)}</nav>
-        <div className="sidebar-bottom"><div className="support-card"><span className="icon-tile amber"><Icon name="spark" /></span><strong>Need a hand?</strong><small>Ask Agro AI about your farm.</small><button onClick={() => go('insights')}>Start a chat <Icon name="arrow" size={15} /></button></div><button className="user-chip" onClick={() => go('profile')}><span>SM</span><div><strong>Sarah Mitchell</strong><small>Willow Creek Farm</small></div><Icon name="chevron" size={16} /></button></div>
+        <div className="sidebar-bottom"><div className="support-card"><span className="icon-tile amber"><Icon name="cloud" /></span><strong>Weather insights</strong><small>Review your current station readings and forecast.</small><button onClick={() => go('insights')}>View insights <Icon name="arrow" size={15} /></button></div><button className="user-chip" onClick={() => go('profile')}><span>{initials}</span><div><strong>{user.first_name}</strong><small>{user.farm_name || user.email}</small></div><Icon name="chevron" size={16} /></button><button className="sidebar-signout" onClick={onSignOut}><Icon name="logout" size={16} /> Sign out</button></div>
       </aside>
       <div className="app-main">
-        <header className="mobile-header"><Logo onClick={() => go('dashboard')} /><button><Icon name="bell" /></button></header>
+        <header className="mobile-header"><Logo onClick={() => go('dashboard')} /><button onClick={() => go('settings')} aria-label="Settings"><Icon name="settings" /></button></header>
         {children}
       </div>
       <nav className="bottom-nav">{navItems.slice(0,5).map(item => <button className={page === item.id ? 'active' : ''} key={item.id} onClick={() => go(item.id)}><Icon name={item.icon} /><small>{item.label === 'AI Insights' ? 'Insights' : item.label}</small></button>)}</nav>
@@ -231,99 +320,303 @@ function PageHeader({ eyebrow, title, body, children }: { eyebrow: string; title
   return <header className="page-header"><div><span className="eyebrow">{eyebrow}</span><h1>{title}</h1>{body && <p>{body}</p>}</div><div className="header-actions">{children}</div></header>
 }
 
-function ForecastStrip({ detailed = false }: { detailed?: boolean }) {
-  return <div className={detailed ? 'forecast-grid detailed' : 'forecast-grid'}>{forecasts.map((f, i) => <article className={i === 0 ? 'forecast active' : 'forecast'} key={f.day}><strong>{f.day}</strong><Icon name={f.icon} size={detailed ? 34 : 26} /><div><b>{f.hi}°</b><span>{f.lo}°</span></div><small><Icon name="droplet" size={13} /> {f.rain}%</small>{detailed && <em>{i === 2 ? 'Rain' : i === 1 || i === 3 ? 'Partly cloudy' : 'Mostly sunny'}</em>}</article>)}</div>
+function useWeatherData() {
+  const [weather, setWeather] = useState<CurrentWeatherResponse | null>(null)
+  const [forecast, setForecast] = useState<ForecastDay[]>([])
+  const [weatherError, setWeatherError] = useState('')
+  const [forecastError, setForecastError] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [refreshKey, setRefreshKey] = useState(0)
+
+  useEffect(() => {
+    let active = true
+    setLoading(true)
+    void Promise.allSettled([fetchCurrentWeather(), fetchForecast(7)]).then(([weatherResult, forecastResult]) => {
+      if (!active) return
+      if (weatherResult.status === 'fulfilled') {
+        setWeather(weatherResult.value)
+        setWeatherError('')
+      } else {
+        setWeatherError(weatherResult.reason instanceof Error ? weatherResult.reason.message : 'Could not load current weather.')
+      }
+      if (forecastResult.status === 'fulfilled') {
+        setForecast(forecastResult.value.forecast)
+        setForecastError('')
+      } else {
+        setForecastError(forecastResult.reason instanceof Error ? forecastResult.reason.message : 'Could not load the forecast.')
+      }
+      setLoading(false)
+    })
+    return () => {
+      active = false
+    }
+  }, [refreshKey])
+
+  return {
+    weather,
+    forecast,
+    weatherError,
+    forecastError,
+    loading,
+    refresh: () => setRefreshKey((key) => key + 1),
+  }
 }
 
-function Dashboard() {
-  const [tasks, setTasks] = useState([false, false, true])
+function displayValue(value: number | null | undefined, suffix = '', digits = 1): string {
+  if (value == null || !Number.isFinite(value)) return '—'
+  return `${Number(value.toFixed(digits))}${suffix}`
+}
+
+function ForecastStrip({ forecast, detailed = false }: { forecast: ForecastDay[]; detailed?: boolean }) {
+  if (!forecast.length) {
+    return <p className="empty-state">No forecast data is currently available.</p>
+  }
+
+  return (
+    <div className={detailed ? 'forecast-grid detailed' : 'forecast-grid'}>
+      {forecast.slice(0, 7).map((day, index) => {
+        const probability = day.rainfall.probability
+        const rain = day.rainfall.rain
+        const icon: IconName = rain ? 'rain' : probability != null && probability >= 0.3 ? 'cloud' : 'sun'
+        const label = new Date(`${day.date}T12:00:00`).toLocaleDateString(undefined, {
+          weekday: detailed ? 'long' : 'short',
+        })
+        return (
+          <article className={index === 0 ? 'forecast active' : 'forecast'} key={day.date}>
+            <strong>{label}</strong>
+            <Icon name={icon} size={detailed ? 34 : 26} />
+            <div>
+              <b>{displayValue(day.temperature.max_c, '°')}</b>
+              <span>{displayValue(day.temperature.min_c, '°')}</span>
+            </div>
+            <small><Icon name="droplet" size={13} /> {probability == null ? '—' : `${Math.round(probability * 100)}%`}</small>
+            {detailed && <em>{displayValue(day.rainfall.amount_mm, ' mm')} expected</em>}
+          </article>
+        )
+      })}
+    </div>
+  )
+}
+
+function Dashboard({
+  user,
+  go,
+}: {
+  user: AuthUser
+  go: (page: Page) => void
+}) {
+  const { weather, forecast, weatherError, forecastError, loading, refresh } = useWeatherData()
+  const current = weather?.weather
+  const greeting = new Date().getHours() < 12 ? 'Good morning' : new Date().getHours() < 18 ? 'Good afternoon' : 'Good evening'
+  const rainyDay = forecast.find((day) => day.rainfall.rain)
+
   return (
     <main className="app-content">
-      <PageHeader eyebrow="Monday, 12 May" title="Good morning, Sarah" body="Here’s what’s happening across Willow Creek Farm."><button className="icon-button"><Icon name="bell" /></button><Button variant="secondary" icon="station">Station online</Button></PageHeader>
+      <PageHeader eyebrow={new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })} title={`${greeting}, ${user.first_name}`} body={`Here’s the latest for ${user.farm_name || 'your farm'}.`}>
+        <Button variant="secondary" icon="station" onClick={refresh}>{loading ? 'Updating…' : 'Refresh weather'}</Button>
+      </PageHeader>
+      {weatherError && <p className="api-error" role="alert">Current weather could not be loaded: {weatherError}</p>}
       <section className="dashboard-grid">
         <article className="conditions-card">
-          <div className="conditions-top"><div><span className="overline">North field · Now</span><h2>Clear and mild</h2></div><span className="status-dot light">Updated 2m ago</span></div>
-          <div className="conditions-main"><div className="big-weather"><Icon name="sun" size={66} /><strong>24<span>°C</span></strong></div><div className="weather-copy"><strong>Feels like 23°</strong><span>High 26° · Low 14°</span></div></div>
-          <div className="conditions-metrics"><span><Icon name="droplet" /> <b>62%</b><small>Humidity</small></span><span><Icon name="wind" /> <b>9 km/h</b><small>NW wind</small></span><span><Icon name="rain" /> <b>0 mm</b><small>Rain today</small></span></div>
+          <div className="conditions-top"><div><span className="overline">{weather?.station_id || user.station_code || 'Farm station'} · Current</span><h2>{weather?.status === 'online' ? 'Live conditions' : weather?.message || 'Weather station waiting for data'}</h2></div><span className="status-dot light">{weather?.status === 'online' ? 'Online' : 'Waiting for data'}</span></div>
+          <div className="conditions-main"><div className="big-weather"><Icon name="sun" size={66} /><strong>{displayValue(current?.temperature_c, '°')}<span>C</span></strong></div><div className="weather-copy"><strong>{user.location || 'Your farm'}</strong><span>{weather?.timestamp ? `Updated ${new Date(weather.timestamp).toLocaleString()}` : loading ? 'Loading live data…' : 'No station reading received yet'}</span></div></div>
+          <div className="conditions-metrics"><span><Icon name="droplet" /> <b>{displayValue(current?.humidity_percent, '%')}</b><small>Humidity</small></span><span><Icon name="wind" /> <b>{displayValue(current?.wind_speed_kmh, ' km/h')}</b><small>Wind speed</small></span><span><Icon name="rain" /> <b>{displayValue(current?.rainfall_mm, ' mm')}</b><small>Rainfall</small></span></div>
         </article>
-        <article className="card ai-card"><div className="card-title"><div><span className="eyebrow">Agro AI</span><h2>Today’s field note</h2></div><span className="icon-tile amber"><Icon name="spark" /></span></div><p>Soil moisture in the tomato block is trending low. Irrigate before 8 AM tomorrow to reduce evaporation loss.</p><div className="confidence"><span style={{ width: '88%' }} /><small>High confidence · Based on station and crop data</small></div><button>View full insight <Icon name="arrow" size={16} /></button></article>
+        <article className="card ai-card"><div className="card-title"><div><span className="eyebrow">Forecast note</span><h2>{rainyDay ? 'Rain in the forecast' : 'Your forecast'}</h2></div><span className="icon-tile amber"><Icon name="spark" /></span></div><p>{rainyDay ? `${Math.round((rainyDay.rainfall.probability ?? 0) * 100)}% chance of rain on ${new Date(`${rainyDay.date}T12:00:00`).toLocaleDateString(undefined, { weekday: 'long' })}${rainyDay.rainfall.amount_mm == null ? '.' : `, with ${displayValue(rainyDay.rainfall.amount_mm, ' mm')} expected.`}` : forecast.length ? 'No rain is predicted in the available forecast.' : 'Forecast data is not available yet.'}</p>{forecastError && <small className="api-error">{forecastError}</small>}<div className="confidence"><small>Based on the backend forecast for your area.</small></div><button onClick={() => go('insights')}>View weather insights <Icon name="arrow" size={16} /></button></article>
       </section>
-      <section className="content-section"><div className="section-title"><div><h2>5-day forecast</h2><p>A calm start, with rain likely Wednesday.</p></div><button>View weather <Icon name="arrow" size={16} /></button></div><ForecastStrip /></section>
+      <section className="content-section"><div className="section-title"><div><h2>Forecast</h2><p>Daily forecast from AgroWeather.</p></div><button onClick={() => go('weather')}>View weather <Icon name="arrow" size={16} /></button></div><ForecastStrip forecast={forecast} /></section>
       <section className="lower-grid">
-        <article className="card"><div className="section-title compact"><div><h2>Priority tasks</h2><p>3 tasks for this week</p></div><Button variant="ghost" icon="plus">Add</Button></div><div className="task-list">{[
-          ['Irrigate tomato block', 'Tomorrow · Before 8:00 AM', 'amber'],
-          ['Check wheat for leaf rust', 'Wednesday · North field', 'green'],
-          ['Calibrate soil sensor', 'Completed yesterday', 'gray'],
-        ].map(([title, meta, tone], i) => <button className={`task ${tasks[i] ? 'done' : ''}`} key={title} onClick={() => setTasks(tasks.map((v,j) => j === i ? !v : v))}><span className={`task-check ${tone}`}>{tasks[i] && <Icon name="check" size={15} />}</span><span><strong>{title}</strong><small>{meta}</small></span><Icon name="chevron" size={16} /></button>)}</div></article>
-        <article className="card"><div className="section-title compact"><div><h2>Crop overview</h2><p>3 active crops</p></div><button>Manage</button></div><div className="crop-mini">{[['Tomatoes','Flowering','Healthy','72%'],['Winter wheat','Tillering','Watch','54%'],['Sweet corn','V4 stage','Healthy','31%']].map(([crop, stage, status, width]) => <div key={crop}><span className="crop-symbol"><Icon name="leaf" size={18} /></span><div><strong>{crop}</strong><small>{stage}</small><i><span style={{ width }} /></i></div><em className={status === 'Watch' ? 'tag amber-tag' : 'tag green-tag'}>{status}</em></div>)}</div></article>
+        <article className="card dashboard-crops"><div className="section-title compact"><div><h2>Your crops</h2><p>{user.crops?.length ?? 0} saved crops</p></div><button onClick={() => go('crops')}>Manage</button></div>{user.crops?.length ? <div className="crop-mini">{user.crops.map((crop) => <div key={crop}><span className="crop-symbol"><Icon name="leaf" size={18} /></span><div><strong>{crop}</strong><small>Saved to your farm profile</small></div></div>)}</div> : <p className="empty-state">Add crops to your farm profile to see them here.</p>}</article>
+        <article className="card dashboard-crops"><div className="section-title compact"><div><h2>Farm details</h2><p>From your account</p></div><button onClick={() => go('profile')}>View profile</button></div><p className="farm-summary">{user.location || 'No location saved'}{user.acres ? ` · ${user.acres}` : ''}</p><p className="farm-summary">{user.station_code ? `Station code: ${user.station_code}` : 'No station code saved'}</p></article>
       </section>
     </main>
   )
 }
 
-function Weather() {
-  const [station, setStation] = useState('North Field Station')
-  return <main className="app-content"><PageHeader eyebrow="Live field weather" title="Weather" body="Hyperlocal conditions from your farm station."><label className="select-control"><Icon name="station" size={17} /><select value={station} onChange={e => setStation(e.target.value)}><option>North Field Station</option><option>Orchard Station</option></select></label></PageHeader>
+function Weather({ user }: { user: AuthUser }) {
+  const { weather, forecast, weatherError, forecastError, loading, refresh } = useWeatherData()
+  const current = weather?.weather
+  return <main className="app-content"><PageHeader eyebrow="Live field weather" title="Weather" body="Current readings and forecast supplied by the backend."><Button variant="secondary" onClick={refresh}>{loading ? 'Updating…' : 'Refresh'}</Button></PageHeader>
+    {weatherError && <p className="api-error" role="alert">Current weather could not be loaded: {weatherError}</p>}
     <article className="weather-hero">
-      <div><span className="status-dot light">Live · updated just now</span><h2>{station}</h2><p>Willow Creek Farm · 51.5074° N</p></div>
-      <div className="weather-display"><Icon name="sun" size={86} /><strong>24<span>°C</span></strong><div><b>Clear skies</b><span>Feels like 23°C</span><small>H: 26° · L: 14°</small></div></div>
-      <div className="sun-times"><span><Icon name="sun" /><small>Sunrise</small><strong>5:42 AM</strong></span><span><Icon name="sun" /><small>Sunset</small><strong>8:14 PM</strong></span></div>
+      <div><span className="status-dot light">{weather?.status === 'online' ? 'Live station data' : 'Waiting for station data'}</span><h2>{weather?.station_id || user.station_code || 'Weather station'}</h2><p>{user.farm_name || 'Your farm'}{user.location ? ` · ${user.location}` : ''}</p></div>
+      <div className="weather-display"><Icon name="sun" size={86} /><strong>{displayValue(current?.temperature_c, '°')}<span>C</span></strong><div><b>{current?.rain_status || weather?.message || 'Current conditions'}</b><span>{current?.day_night || 'Live sensor reading'}</span><small>{weather?.timestamp ? `Updated ${new Date(weather.timestamp).toLocaleString()}` : 'No timestamp available'}</small></div></div>
     </article>
-    <section className="metric-grid">{[['droplet','Humidity','62','%'],['wind','Wind','9','km/h'],['pressure','Pressure','1,016','hPa'],['rain','Rain today','0.0','mm']].map(([icon,label,value,unit]) => <article className="metric-card" key={label}><span className="icon-tile blue"><Icon name={icon as IconName} /></span><div><small>{label}</small><strong>{value}<em>{unit}</em></strong></div><span className="trend">Normal</span></article>)}</section>
-    <section className="content-section"><div className="section-title"><div><h2>5-day forecast</h2><p>Weather outlook for North Field.</p></div><span className="updated"><Icon name="clock" size={14} /> Updated 2 min ago</span></div><ForecastStrip detailed /></section>
+    <section className="metric-grid">{[['droplet','Humidity',displayValue(current?.humidity_percent),'%'],['wind','Wind',displayValue(current?.wind_speed_kmh),'km/h'],['pressure','Pressure',displayValue(current?.pressure_hpa),'hPa'],['rain','Rainfall',displayValue(current?.rainfall_mm),'mm']].map(([icon,label,value,unit]) => <article className="metric-card" key={label}><span className="icon-tile blue"><Icon name={icon as IconName} /></span><div><small>{label}</small><strong>{value}<em>{unit}</em></strong></div></article>)}</section>
+    {forecastError && <p className="api-error" role="alert">Forecast could not be loaded: {forecastError}</p>}
+    <section className="content-section"><div className="section-title"><div><h2>Forecast</h2><p>Daily predictions from the backend forecast.</p></div></div><ForecastStrip forecast={forecast} detailed /></section>
   </main>
 }
 
-function Crops() {
+function Crops({
+  user,
+  onUserUpdate,
+}: {
+  user: AuthUser
+  onUserUpdate: (user: AuthUser) => void
+}) {
   const [showAdd, setShowAdd] = useState(false)
-  const [crops, setCrops] = useState([
-    { name: 'Tomatoes', variety: 'Roma · South block', stage: 'Flowering', health: 'Healthy', progress: 72, color: 'tomato' },
-    { name: 'Winter wheat', variety: 'Galloway · North field', stage: 'Tillering', health: 'Needs attention', progress: 54, color: 'wheat' },
-    { name: 'Sweet corn', variety: 'Golden Bantam · East field', stage: 'V4 stage', health: 'Healthy', progress: 31, color: 'corn' },
-  ])
-  const addCrop = (e: FormEvent<HTMLFormElement>) => { e.preventDefault(); const data = new FormData(e.currentTarget); setCrops([...crops, { name: String(data.get('name')), variety: 'New crop · Unassigned field', stage: 'Planted', health: 'Healthy', progress: 8, color: 'green' }]); setShowAdd(false) }
-  return <main className="app-content"><PageHeader eyebrow={`${crops.length} active crops`} title="Your crops" body="Monitor crop health, growth stages, and field conditions."><Button icon="plus" onClick={() => setShowAdd(true)}>Add crop</Button></PageHeader>
-    <section className="crop-grid">{crops.map((crop, i) => <article className="crop-card" key={`${crop.name}-${i}`}><div className={`crop-art ${crop.color}`}><Icon name="leaf" size={44} /><span className={crop.health === 'Needs attention' ? 'tag amber-tag' : 'tag green-tag'}>{crop.health}</span></div><div className="crop-body"><span className="overline">{crop.variety}</span><h2>{crop.name}</h2><div className="growth"><span><b>{crop.stage}</b><small>{crop.progress}% of season</small></span><i><span style={{ width: `${crop.progress}%` }} /></i></div><div className="crop-stats"><span><small>Soil moisture</small><b>{i === 1 ? '48%' : '64%'}</b></span><span><small>Next task</small><b>{i === 1 ? 'Inspect Wed' : 'Water Tue'}</b></span></div><Button variant="secondary" icon="arrow">Manage crop</Button></div></article>)}</section>
-    <section className="field-summary card"><span className="icon-tile"><Icon name="leaf" /></span><div><h3>Fields are looking good</h3><p>2 of 3 crops are in optimal condition. Winter wheat has a moderate leaf rust risk after Wednesday’s rain.</p></div><Button variant="secondary">View field report</Button></section>
-    {showAdd && <div className="modal-backdrop" onClick={() => setShowAdd(false)}><div className="modal" onClick={e => e.stopPropagation()}><button className="modal-close" onClick={() => setShowAdd(false)}><Icon name="close" /></button><span className="icon-tile"><Icon name="leaf" /></span><h2>Add a crop</h2><p>Start tracking a crop and receive tailored weather insights.</p><form onSubmit={addCrop}><label>Crop name<input name="name" required placeholder="e.g. Potatoes" /></label><label>Field<select><option>North field</option><option>South block</option><option>East field</option></select></label><Button type="submit" className="full">Add crop</Button></form></div></div>}
+  const [error, setError] = useState('')
+  const [saving, setSaving] = useState(false)
+  const crops = user.crops ?? []
+
+  const saveCrops = async (nextCrops: string[]) => {
+    setError('')
+    setSaving(true)
+    try {
+      onUserUpdate(await updateMyCrops(nextCrops))
+      setShowAdd(false)
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : 'Could not save your crops.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const addCrop = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const formData = new FormData(event.currentTarget)
+    const crop = String(formData.get('name')).trim()
+    if (crop && !crops.some((existing) => existing.toLocaleLowerCase() === crop.toLocaleLowerCase())) {
+      void saveCrops([...crops, crop])
+    } else {
+      setError(crop ? 'This crop is already on your farm.' : 'Enter a crop name.')
+    }
+  }
+
+  return <main className="app-content"><PageHeader eyebrow={`${crops.length} saved crops`} title="Your crops" body="Manage the crop preferences saved to your account."><Button icon="plus" onClick={() => { setError(''); setShowAdd(true) }}>Add crop</Button></PageHeader>
+    {error && <p className="api-error" role="alert">{error}</p>}
+    {crops.length ? <section className="crop-grid">{crops.map((crop, index) => <article className="crop-card" key={crop}><div className={`crop-art ${['tomato', 'wheat', 'corn'][index % 3]}`}><Icon name="leaf" size={44} /></div><div className="crop-body"><span className="overline">{user.farm_name || 'Your farm'}</span><h2>{crop}</h2><div className="crop-stats"><span><small>Farm location</small><b>{user.location || 'Not set'}</b></span><span><small>Farm size</small><b>{user.acres || 'Not set'}</b></span></div><Button variant="secondary" disabled={saving} onClick={() => void saveCrops(crops.filter((item) => item !== crop))}>{saving ? 'Saving…' : 'Remove crop'}</Button></div></article>)}</section> : <p className="empty-state card">No crops are saved to your account yet. Add the crops you grow to personalize your farm dashboard.</p>}
+    {showAdd && <div className="modal-backdrop" onClick={() => !saving && setShowAdd(false)}><div className="modal" onClick={event => event.stopPropagation()}><button className="modal-close" onClick={() => setShowAdd(false)}><Icon name="close" /></button><span className="icon-tile"><Icon name="leaf" /></span><h2>Add a crop</h2><p>This crop will be saved to your account and appear on your dashboard.</p><form onSubmit={addCrop}><label>Crop name<input name="name" required placeholder="e.g. Potatoes" /></label><Button type="submit" className="full">{saving ? 'Saving…' : 'Add crop'}</Button></form></div></div>}
   </main>
 }
 
-const initialInsights = [
-  { severity: 'Action recommended', tone: 'amber', title: 'Irrigate tomatoes before tomorrow’s heat', body: 'Soil moisture is trending low and tomorrow afternoon will reach 28°C. A 20-minute drip cycle before 8 AM will reduce plant stress.', crop: 'Tomatoes', time: '12 min ago', icon: 'droplet' as IconName },
-  { severity: 'Weather watch', tone: 'blue', title: 'Rain window arriving Wednesday', body: 'Expect 8–12 mm between 2 PM and 9 PM. Delay fertilizer application until Thursday morning to avoid runoff.', crop: 'All fields', time: '1 hr ago', icon: 'rain' as IconName },
-  { severity: 'Monitor', tone: 'rose', title: 'Moderate leaf rust risk in wheat', body: 'Cool, damp conditions after Wednesday’s rain may favor leaf rust. Inspect lower leaves in the north field within 48 hours.', crop: 'Winter wheat', time: 'Today, 7:20 AM', icon: 'shield' as IconName },
-  { severity: 'Good news', tone: 'green', title: 'Strong conditions for corn growth', body: 'Soil temperature and moisture are in the optimal range for your sweet corn’s V4 growth stage this week.', crop: 'Sweet corn', time: 'Yesterday', icon: 'leaf' as IconName },
-]
+function loadChatHistory(userId: string): ChatTurn[] {
+  const raw = sessionStorage.getItem(`agroweather_chat_${userId}`)
+  if (!raw) return []
 
-function Insights() {
+  try {
+    const messages: unknown = JSON.parse(raw)
+    if (
+      Array.isArray(messages) &&
+      messages.every(
+        (message): message is ChatTurn =>
+          message &&
+          (message.role === 'user' || message.role === 'assistant') &&
+          typeof message.content === 'string',
+      )
+    ) {
+      return messages
+    }
+  } catch {
+    sessionStorage.removeItem(`agroweather_chat_${userId}`)
+  }
+  return []
+}
+
+function Insights({ user }: { user: AuthUser }) {
+  const { weather, forecast, weatherError, forecastError, loading, refresh } = useWeatherData()
+  const [messages, setMessages] = useState<ChatTurn[]>(() => loadChatHistory(user.id))
   const [query, setQuery] = useState('')
-  const [messages, setMessages] = useState<string[]>([])
-  const send = () => { if (query.trim()) { setMessages([...messages, query.trim()]); setQuery('') } }
-  return <main className="app-content insights-page"><PageHeader eyebrow="Personalized for your farm" title="AI Insights" body="Timely recommendations built from your crops, station, and forecast."><span className="ai-status"><i /> Agro AI is online</span></PageHeader>
-    <section className="insight-layout"><div className="insight-feed">{messages.map((m,i) => <article className="card user-question" key={i}><span className="icon-tile"><Icon name="user" /></span><div><span className="overline">You asked just now</span><h3>{m}</h3><p>Based on your current station data, conditions are stable. I’ll keep monitoring your fields and notify you if action is needed.</p></div></article>)}{initialInsights.map((item) => <article className="insight-card" key={item.title}><div className={`insight-icon ${item.tone}`}><Icon name={item.icon} /></div><div className="insight-content"><span className={`tag ${item.tone}-tag`}>{item.severity}</span><h2>{item.title}</h2><p>{item.body}</p><div><span><Icon name="leaf" size={14} /> {item.crop}</span><span><Icon name="clock" size={14} /> {item.time}</span></div></div><button><Icon name="chevron" size={18} /></button></article>)}</div>
-      <aside className="insight-side"><article className="card"><span className="eyebrow">This week</span><h3>Your farm at a glance</h3><div className="risk-meter"><span><b>3</b><small>Healthy</small></span><span><b>1</b><small>To watch</small></span><span><b>2</b><small>Actions</small></span></div></article><article className="card"><span className="icon-tile amber"><Icon name="spark" /></span><h3>How insights work</h3><p>Agro AI combines your local station, crop stages, and forecast to suggest timely actions.</p></article></aside>
+  const [chatError, setChatError] = useState('')
+  const [sending, setSending] = useState(false)
+  const transcriptEnd = useRef<HTMLDivElement>(null)
+  const observations = forecast
+    .filter((day) => day.rainfall.rain || (day.rainfall.probability ?? 0) >= 0.3)
+    .map((day) => {
+      const probability = day.rainfall.probability
+      return {
+        title: `Rain forecast for ${new Date(`${day.date}T12:00:00`).toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' })}`,
+        body: `${probability == null ? 'Rain is predicted' : `${Math.round(probability * 100)}% chance of rain`}${day.rainfall.amount_mm == null ? '.' : `, with ${displayValue(day.rainfall.amount_mm, ' mm')} expected.`}`,
+        date: day.date,
+      }
+    })
+  const current = weather?.weather
+  useEffect(() => {
+    sessionStorage.setItem(`agroweather_chat_${user.id}`, JSON.stringify(messages))
+    transcriptEnd.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+  }, [messages, user.id])
+
+  const submitPrompt = async (event?: FormEvent<HTMLFormElement>) => {
+    event?.preventDefault()
+    const message = query.trim()
+    if (!message || sending) return
+
+    setSending(true)
+    setChatError('')
+    try {
+      const { reply } = await sendFarmChat(message, messages)
+      setMessages((currentMessages) => [
+        ...currentMessages,
+        { role: 'user', content: message },
+        { role: 'assistant', content: reply },
+      ])
+      setQuery('')
+    } catch (error) {
+      setChatError(error instanceof Error ? error.message : 'Farm chat could not send your message.')
+    } finally {
+      setSending(false)
+    }
+  }
+
+  return <main className="app-content insights-page"><PageHeader eyebrow="Based on live API data" title="Weather insights" body="Observations from your current station reading and forecast."><Button variant="secondary" onClick={refresh}>{loading ? 'Updating…' : 'Refresh'}</Button></PageHeader>
+    {(weatherError || forecastError) && <p className="api-error" role="alert">{[weatherError && `Current weather: ${weatherError}`, forecastError && `Forecast: ${forecastError}`].filter(Boolean).join(' ')}</p>}
+    <section className="chat-panel" aria-label="Farm assistant conversation">
+      <div className="chat-heading"><span className="icon-tile amber"><Icon name="spark" /></span><div><h2>Chat with AgroWeather</h2><p>Ask about your farm, crops, current weather, or forecast.</p></div></div>
+      <div className="chat-thread" aria-live="polite">
+        {messages.length === 0 && <div className="chat-message assistant"><b>AgroWeather assistant</b><p>Hi{user.first_name ? ` ${user.first_name}` : ''}! I can help you discuss your farm using its saved details and current weather data. What would you like to know?</p></div>}
+        {messages.map((message, index) => <article className={`chat-message ${message.role}`} key={`${index}-${message.role}`}><b>{message.role === 'user' ? 'You' : 'AgroWeather assistant'}</b><p>{message.content}</p></article>)}
+        {sending && <div className="chat-message assistant" role="status"><b>AgroWeather assistant</b><p>Checking your farm details and preparing a reply…</p></div>}
+        <div ref={transcriptEnd} />
+      </div>
     </section>
-    <div className="ai-composer"><div className="quick-chips"><span>Ask Agro AI:</span>{['Will it rain?', 'Irrigation advice', 'Check crop risks'].map(chip => <button key={chip} onClick={() => setQuery(chip)}>{chip}</button>)}</div><div className="composer-input"><textarea rows={1} value={query} onChange={e => setQuery(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() } }} placeholder="Ask about your weather, crops, or field tasks..." /><button onClick={send} aria-label="Send message"><Icon name="send" /></button></div><small>Agro AI can make mistakes. Check important agronomic decisions.</small></div>
+    <section className="insight-layout"><div className="insight-feed">
+      {weather?.status === 'online' && current?.temperature_c != null && <article className="insight-card"><div className="insight-icon amber"><Icon name="sun" /></div><div className="insight-content"><span className="tag amber-tag">Current reading</span><h2>{displayValue(current.temperature_c, '°C')} at {weather.station_id || 'your station'}</h2><p>{current.humidity_percent == null ? 'Humidity has not been reported.' : `Humidity is ${displayValue(current.humidity_percent, '%')}.`}{current.wind_speed_kmh == null ? '' : ` Wind is ${displayValue(current.wind_speed_kmh, ' km/h')}.`}</p><div><span><Icon name="station" size={14} /> {weather.station_id || 'Station'}</span><span><Icon name="clock" size={14} /> {weather.timestamp ? new Date(weather.timestamp).toLocaleString() : 'Latest reading'}</span></div></div></article>}
+      {observations.map((item) => <article className="insight-card" key={item.date}><div className="insight-icon blue"><Icon name="rain" /></div><div className="insight-content"><span className="tag blue-tag">Forecast</span><h2>{item.title}</h2><p>{item.body}</p><div><span><Icon name="cloud" size={14} /> {weather?.station_id || 'Farm forecast'}</span></div></div></article>)}
+      {!loading && weather?.status !== 'online' && observations.length === 0 && !weatherError && !forecastError && <p className="empty-state card">No live station readings or rain events are available in the current data.</p>}
+      {loading && <p className="empty-state">Loading weather observations…</p>}
+    </div>
+      <aside className="insight-side"><article className="card"><span className="eyebrow">Your farm</span><h3>{weather?.station_id || 'Station status'}</h3><p>{weather?.status === 'online' ? 'The backend reports that the station has current data.' : weather?.message || 'No current station data has been reported.'}</p><div className="risk-meter"><span><b>{forecast.length}</b><small>Forecast days</small></span><span><b>{observations.length}</b><small>Rain alerts</small></span><span><b>{current?.humidity_percent == null ? '—' : `${Math.round(current.humidity_percent)}%`}</b><small>Humidity</small></span></div></article><article className="card"><span className="icon-tile amber"><Icon name="spark" /></span><h3>About chat</h3><p>Replies use the farm profile, current weather, and forecast available to AgroWeather. Farm details and prompts are sent to Gemini to generate responses.</p></article></aside>
+    </section>
+    <div className="ai-composer">
+      <div className="quick-chips"><span>Try asking:</span>{['Will it rain this week?', 'What crops are on my farm?', 'Summarize my current weather'].map((prompt) => <button key={prompt} type="button" onClick={() => setQuery(prompt)}>{prompt}</button>)}</div>
+      {chatError && <p className="chat-error" role="alert">{chatError}</p>}
+      <form className="composer-input" onSubmit={(event) => void submitPrompt(event)}>
+        <textarea rows={1} value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void submitPrompt() } }} placeholder="Ask the farm assistant about your farm…" aria-label="Message the farm assistant" />
+        <button type="submit" disabled={sending || !query.trim()} aria-label="Send message"><Icon name="send" /></button>
+      </form>
+      <small>Weather and crop guidance is informational. Avoid sharing sensitive personal information.</small>
+    </div>
   </main>
 }
 
-function Profile({ onPair }: { onPair: () => void }) {
-  return <main className="app-content"><PageHeader eyebrow="Your account" title="Farm profile" body="Manage the details that personalize your AgroWeather experience."><Button variant="secondary">Edit profile</Button></PageHeader>
-    <section className="profile-grid"><article className="card profile-card"><div className="avatar">SM</div><h2>Sarah Mitchell</h2><p>Farm owner · Member since March 2024</p><div className="profile-meta"><span><small>Email</small><b>sarah@willowcreek.farm</b></span><span><small>Phone</small><b>+44 7700 900 124</b></span></div></article>
-      <article className="card farm-info"><div className="section-title compact"><div><span className="eyebrow">Primary farm</span><h2>Willow Creek Farm</h2></div><span className="tag green-tag">Active</span></div><div className="info-grid"><span><small>Location</small><b>Shropshire, UK</b></span><span><small>Farm size</small><b>48 hectares</b></span><span><small>Active fields</small><b>3 fields</b></span><span><small>Main crops</small><b>Wheat, tomato, corn</b></span></div></article>
-      <article className="card station-card"><div><span className="icon-tile blue"><Icon name="station" /></span><span><small>Connected station</small><h3>North Field Station</h3><p>AGR-8401 · Last synced just now</p></span></div><span className="status-dot">Online</span><Button variant="secondary" onClick={onPair}>Pair another station</Button></article>
+function Profile({ user, onSignOut }: { user: AuthUser; onSignOut: () => void }) {
+  const initials = user.first_name
+    .split(/\s+/)
+    .map((part) => part[0])
+    .join('')
+    .slice(0, 2)
+    .toUpperCase()
+  return <main className="app-content"><PageHeader eyebrow="Your account" title="Farm profile" body="Account details saved by AgroWeather."><Button variant="secondary" icon="logout" onClick={onSignOut}>Sign out</Button></PageHeader>
+    <section className="profile-grid"><article className="card profile-card"><div className="avatar">{initials}</div><h2>{user.first_name}</h2><p>Account created {user.created_at ? new Date(user.created_at).toLocaleDateString() : 'date unavailable'}</p><div className="profile-meta"><span><small>Email</small><b>{user.email}</b></span><span><small>User ID</small><b>{user.id}</b></span></div></article>
+      <article className="card farm-info"><div className="section-title compact"><div><span className="eyebrow">Farm details</span><h2>{user.farm_name || 'Farm name not set'}</h2></div><span className="tag green-tag">Account</span></div><div className="info-grid"><span><small>Location</small><b>{user.location || 'Not set'}</b></span><span><small>Farm size</small><b>{user.acres || 'Not set'}</b></span><span><small>Saved crops</small><b>{user.crops?.length ?? 0}</b></span><span><small>Crops</small><b>{user.crops?.join(', ') || 'None saved'}</b></span></div><p className="profile-note">The current backend does not expose profile-edit or account-deletion endpoints.</p></article>
+      <article className="card station-card"><div><span className="icon-tile blue"><Icon name="station" /></span><span><small>Station code on account</small><h3>{user.station_code || 'No station code saved'}</h3><p>Station status and pairing are managed separately by the backend.</p></span></div></article>
     </section>
   </main>
 }
 
-function Settings({ go, onPair }: { go: (p: Page) => void; onPair: () => void }) {
-  const [email, setEmail] = useState(true); const [alerts, setAlerts] = useState(true)
-  return <main className="app-content"><PageHeader eyebrow="Preferences" title="Settings" body="Tune AgroWeather to how you work." />
+function Settings({ go, onPair, onSignOut }: { go: (p: Page) => void; onPair: () => void; onSignOut: () => void }) {
+  const [email, setEmail] = useState(() => localStorage.getItem('agroweather_weekly_summary') !== 'false')
+  const [alerts, setAlerts] = useState(() => localStorage.getItem('agroweather_weather_alerts') !== 'false')
+  const togglePreference = (key: string, value: boolean, update: (value: boolean) => void) => {
+    localStorage.setItem(key, String(!value))
+    update(!value)
+  }
+  return <main className="app-content"><PageHeader eyebrow="Preferences" title="Settings" body="Display units and notification preferences are stored in this browser." />
     <section className="settings-layout"><div>
-      <article className="card settings-card"><div className="settings-heading"><span className="icon-tile"><Icon name="settings" /></span><div><h2>Units & display</h2><p>Choose how measurements appear.</p></div></div><label className="setting-row"><span><b>Temperature</b><small>Used across forecasts and alerts</small></span><select><option>Celsius (°C)</option><option>Fahrenheit (°F)</option></select></label><label className="setting-row"><span><b>Wind speed</b><small>Your preferred wind unit</small></span><select><option>km/h</option><option>mph</option></select></label><label className="setting-row"><span><b>Rainfall</b><small>Your preferred precipitation unit</small></span><select><option>Millimetres</option><option>Inches</option></select></label></article>
-      <article className="card settings-card"><div className="settings-heading"><span className="icon-tile amber"><Icon name="bell" /></span><div><h2>Notifications</h2><p>Control how we keep you informed.</p></div></div><button className="setting-row" onClick={() => setAlerts(!alerts)}><span><b>Critical weather alerts</b><small>Frost, storms, heat, and heavy rain</small></span><i className={`toggle ${alerts ? 'on' : ''}`}><span /></i></button><button className="setting-row" onClick={() => setEmail(!email)}><span><b>Weekly farm summary</b><small>Insights and forecast sent every Monday</small></span><i className={`toggle ${email ? 'on' : ''}`}><span /></i></button></article>
-    </div><aside><article className="card settings-card"><div className="settings-heading"><span className="icon-tile blue"><Icon name="station" /></span><div><h2>Weather station</h2><p>Manage your connected hardware.</p></div></div><div className="connected-device"><span><i /> North Field Station</span><small>Online · AGR-8401</small></div><Button variant="secondary" onClick={onPair} className="full">Pair another station</Button></article><article className="card settings-card legal-list"><h2>Privacy & legal</h2><button onClick={() => go('privacy')}><span><Icon name="shield" /> Privacy policy</span><Icon name="chevron" /></button><button onClick={() => go('terms')}><span><Icon name="check" /> Terms of service</span><Icon name="chevron" /></button><button className="danger"><span><Icon name="logout" /> Sign out</span><Icon name="chevron" /></button></article></aside></section>
+      <article className="card settings-card"><div className="settings-heading"><span className="icon-tile"><Icon name="settings" /></span><div><h2>Units & display</h2><p>Measurements are currently displayed in backend-provided units.</p></div></div><label className="setting-row"><span><b>Temperature</b><small>Backend values are degrees Celsius</small></span><select disabled><option>Celsius (°C)</option></select></label><label className="setting-row"><span><b>Wind speed</b><small>Backend values are kilometres per hour</small></span><select disabled><option>km/h</option></select></label><label className="setting-row"><span><b>Rainfall</b><small>Backend values are millimetres</small></span><select disabled><option>Millimetres</option></select></label></article>
+      <article className="card settings-card"><div className="settings-heading"><span className="icon-tile amber"><Icon name="bell" /></span><div><h2>Local preferences</h2><p>Saved in this browser only; server notifications are not available.</p></div></div><button className="setting-row" onClick={() => togglePreference('agroweather_weather_alerts', alerts, setAlerts)}><span><b>Show weather alerts</b><small>Enable weather alerts in this browser</small></span><i className={`toggle ${alerts ? 'on' : ''}`}><span /></i></button><button className="setting-row" onClick={() => togglePreference('agroweather_weekly_summary', email, setEmail)}><span><b>Weekly summary preference</b><small>Preference only; no email is sent</small></span><i className={`toggle ${email ? 'on' : ''}`}><span /></i></button></article>
+    </div><aside><article className="card settings-card"><div className="settings-heading"><span className="icon-tile blue"><Icon name="station" /></span><div><h2>Weather station</h2><p>Station reading from the backend API.</p></div></div><div className="connected-device"><span><i /> Station pairing</span><small>Post-registration pairing is not supported by the current API.</small></div><Button variant="secondary" onClick={onPair} className="full">Station details</Button></article><article className="card settings-card legal-list"><h2>Privacy & legal</h2><button onClick={() => go('privacy')}><span><Icon name="shield" /> Privacy policy</span><Icon name="chevron" /></button><button onClick={() => go('terms')}><span><Icon name="check" /> Terms of service</span><Icon name="chevron" /></button><button className="danger" onClick={onSignOut}><span><Icon name="logout" /> Sign out</span><Icon name="chevron" /></button></article></aside></section>
   </main>
 }
 
@@ -340,25 +633,114 @@ function Legal({ type, go }: { type: 'privacy' | 'terms'; go: (p: Page) => void 
   ]).map(([title, body], i) => <section key={title}><span>0{i+1}</span><div><h2>{title}</h2><p>{body}</p></div></section>)}</main><footer><Logo onClick={() => go('landing')} /><div><button onClick={() => go('privacy')}>Privacy</button><button onClick={() => go('terms')}>Terms</button></div></footer></div>
 }
 
-function PairModal({ close }: { close: () => void }) {
-  const [paired, setPaired] = useState(false)
-  return <div className="modal-backdrop" onClick={close}><div className="modal" onClick={e => e.stopPropagation()}><button className="modal-close" onClick={close}><Icon name="close" /></button>{paired ? <><span className="icon-tile success"><Icon name="check" /></span><h2>Station connected</h2><p>South Field Station is now linked and will begin sending data shortly.</p><Button onClick={close} className="full">Done</Button></> : <><span className="icon-tile blue"><Icon name="station" /></span><h2>Pair a weather station</h2><p>Enter the code printed beneath your AgroWeather station.</p><label>Pair code<input className="code-input" placeholder="AGR-0000" /></label><Button onClick={() => setPaired(true)} className="full">Connect station</Button><small className="modal-help">Keep your station powered on and within Wi-Fi range.</small></>}</div></div>
+function PairModal({ close, stationCode }: { close: () => void; stationCode?: string | null }) {
+  return <div className="modal-backdrop" onClick={close}><div className="modal" onClick={event => event.stopPropagation()}><button className="modal-close" onClick={close}><Icon name="close" /></button><span className="icon-tile blue"><Icon name="station" /></span><h2>Station details</h2><p>{stationCode ? `Saved station code: ${stationCode}.` : 'No station code is saved on this account.'}</p><p>The backend currently provides weather readings but does not expose an endpoint to pair or update a station from this screen.</p><Button onClick={close} className="full">Close</Button></div></div>
 }
 
 export default function App() {
-  const [page, setPage] = useState<Page>('landing')
+  const [page, setPage] = useState<Page>(() => {
+    const path = window.location.pathname
+    const match = (['signin', 'signup', 'dashboard', 'weather', 'crops', 'insights', 'profile', 'settings', 'privacy', 'terms'] as Page[])
+      .find((item) => path === `/${item}`)
+    return match ?? 'landing'
+  })
+  const [user, setUser] = useState<AuthUser | null>(getStoredUser)
+  const [bootstrapping, setBootstrapping] = useState(true)
   const [pairing, setPairing] = useState(false)
-  const go = (next: Page) => { setPage(next); window.scrollTo({ top: 0, behavior: 'smooth' }) }
-  if (page === 'landing') return <Landing go={go} />
-  if (page === 'signin' || page === 'signup') return <AuthPage mode={page} go={go} />
+  const [sessionMessage, setSessionMessage] = useState('')
+
+  useEffect(() => {
+    let active = true
+    const token = localStorage.getItem('agroweather_token')
+    if (!token) {
+      setBootstrapping(false)
+      return () => {
+        active = false
+      }
+    }
+
+    void fetchMe()
+      .then((currentUser) => {
+        if (!active) return
+        setUser(currentUser)
+        if (['signin', 'signup', 'landing'].includes(page)) setPage('dashboard')
+      })
+      .catch((error: unknown) => {
+        if (!active) return
+        if (error instanceof ApiError && error.status === 401) {
+          clearSession()
+          setUser(null)
+          setSessionMessage('Your session expired. Please sign in again.')
+          if (!['privacy', 'terms'].includes(page)) {
+            window.history.replaceState({}, '', '/signin')
+            setPage('signin')
+          }
+        } else {
+          setSessionMessage('The backend could not verify your saved session. Check your connection and try again.')
+        }
+      })
+      .finally(() => {
+        if (active) setBootstrapping(false)
+      })
+    return () => {
+      active = false
+    }
+  }, [])
+
+  useEffect(() => {
+    const handlePopState = () => {
+      const path = window.location.pathname
+      const next = (['signin', 'signup', 'dashboard', 'weather', 'crops', 'insights', 'profile', 'settings', 'privacy', 'terms'] as Page[])
+        .find((item) => path === `/${item}`) ?? 'landing'
+      if (['dashboard', 'weather', 'crops', 'insights', 'profile', 'settings'].includes(next) && !user) {
+        window.history.replaceState({}, '', '/signin')
+        setPage('signin')
+        return
+      }
+      setPage(next)
+    }
+    window.addEventListener('popstate', handlePopState)
+    return () => window.removeEventListener('popstate', handlePopState)
+  }, [user])
+
+  const privatePages: Page[] = ['dashboard', 'weather', 'crops', 'insights', 'profile', 'settings']
+  const go = (requested: Page) => {
+    const next = privatePages.includes(requested) && !user ? 'signin' : requested
+    const path = next === 'landing' ? '/' : `/${next}`
+    window.history.pushState({}, '', path)
+    setPage(next)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+  const handleAuthSuccess = (authenticatedUser: AuthUser) => {
+    setUser(authenticatedUser)
+    setSessionMessage('')
+    window.history.pushState({}, '', '/dashboard')
+    setPage('dashboard')
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+  const handleSignOut = () => {
+    clearSession()
+    setUser(null)
+    setPairing(false)
+    go('landing')
+  }
+
+  if (bootstrapping) return <div className="loading-screen">Connecting to AgroWeather…</div>
+  if (page === 'landing') return <><Landing go={go} />{sessionMessage && <p className="session-message">{sessionMessage}</p>}</>
+  if (page === 'signin' || page === 'signup') return <><AuthPage mode={page} go={go} onSuccess={handleAuthSuccess} />{sessionMessage && <p className="session-message">{sessionMessage}</p>}</>
   if (page === 'privacy' || page === 'terms') return <Legal type={page} go={go} />
-  return <AppShell page={page} go={go}>
-    {page === 'dashboard' && <Dashboard />}
-    {page === 'weather' && <Weather />}
-    {page === 'crops' && <Crops />}
-    {page === 'insights' && <Insights />}
-    {page === 'profile' && <Profile onPair={() => setPairing(true)} />}
-    {page === 'settings' && <Settings go={go} onPair={() => setPairing(true)} />}
-    {pairing && <PairModal close={() => setPairing(false)} />}
-  </AppShell>
+  if (!user && privatePages.includes(page)) return <AuthPage mode="signin" go={go} onSuccess={handleAuthSuccess} />
+  if (!user) return <Landing go={go} />
+  return <>
+    {sessionMessage && <p className="session-message" role="status">{sessionMessage}</p>}
+    <AppShell page={page} go={go} user={user} onSignOut={handleSignOut}>
+    {page === 'dashboard' && <Dashboard user={user} go={go} />}
+    {page === 'weather' && <Weather user={user} />}
+    {page === 'crops' && <Crops user={user} onUserUpdate={setUser} />}
+    {page === 'insights' && <Insights user={user} />}
+    {page === 'profile' && <Profile user={user} onSignOut={handleSignOut} />}
+    {page === 'settings' && <Settings go={go} onPair={() => setPairing(true)} onSignOut={handleSignOut} />}
+      {pairing && <PairModal close={() => setPairing(false)} stationCode={user.station_code} />}
+    </AppShell>
+  </>
 }

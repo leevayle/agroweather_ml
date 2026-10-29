@@ -143,6 +143,7 @@ unnecessarily recalculate the same forecast.
 | /forecast/range   | GET    | Custom date-range forecast       |
 | /docs             | GET    | Interactive Swagger UI           |
 | /redoc            | GET    | Alternative documentation        |
+| /chat             | POST   | Authenticated Gemini farm chat    |
 +-------------------+--------+----------------------------------+
 
 
@@ -554,6 +555,7 @@ Current weather:
     print(response.status_code)
     print(response.json())
 
+
 7-day forecast:
 
     import requests
@@ -779,6 +781,7 @@ Check:
 
        http://127.0.0.1:8000/health
 
+
 6. Open Swagger:
 
        http://127.0.0.1:8000/docs
@@ -906,6 +909,57 @@ Documentation:
 
 9. Keep this document as the backend API reference while building
    the AgroWeather frontend.
+
+
+28. POST /chat
+==============
+
+Purpose:
+    Sends a farm-related message to the authenticated AgroWeather
+    assistant. The backend adds the user's saved farm details and
+    available current weather/forecast context.
+
+Authentication:
+    Include the bearer token returned by /auth/login or /auth/signup:
+
+    Authorization: Bearer YOUR_ACCESS_TOKEN
+
+Request:
+
+    POST /chat
+    Content-Type: application/json
+
+    {
+      "message": "Will it rain on my maize this week?",
+      "history": [
+        {
+          "role": "user",
+          "content": "I grow maize."
+        },
+        {
+          "role": "assistant",
+          "content": "I can use your saved farm details and available forecast."
+        }
+      ]
+    }
+
+Response:
+
+    {
+      "reply": "..."
+    }
+
+Gemini configuration:
+    Set GEMINI_API_KEY in the root .env file. GEMINI_MODEL is
+    optional and defaults to gemini-2.5-flash. Restart the backend after
+    changing the configuration. Never put the provider key in frontend code.
+
+Errors:
+    401 - missing or invalid access token
+    422 - invalid or empty message
+    429 - Gemini project rate limit or usage quota reached
+    502 - Gemini request failed
+    503 - GEMINI_API_KEY is missing or rejected
 
 
 END OF AGROWEATHER BACKEND API REFERENCE
