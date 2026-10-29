@@ -24,6 +24,7 @@ export function getUserErrorMessage(error: unknown, fallback: string): string {
 
 function getHttpErrorMessage(path: string, status: number): string {
   const isChat = path.startsWith('/chat')
+  const isInsights = path === '/chat/insights'
   const isWeather = path.startsWith('/weather') || path.startsWith('/forecast')
   const isLogin = path === '/auth/login'
   const isSignup = path === '/auth/signup'
@@ -41,18 +42,24 @@ function getHttpErrorMessage(path: string, status: number): string {
   }
   if (status === 422) return 'Please check your information and try again.'
   if (status === 429) {
-    return isChat
+    return isInsights
+      ? 'Crop insights are busy right now. Please try again shortly.'
+      : isChat
       ? 'The farm assistant is busy right now. Please try again shortly.'
       : 'Please wait a moment and try again.'
   }
   if (status >= 500) {
-    return isChat
+    return isInsights
+      ? 'Crop insights are temporarily unavailable. Please try again later.'
+      : isChat
       ? 'The farm assistant is temporarily unavailable. Please try again later.'
       : isWeather
         ? 'Weather data is temporarily unavailable. Please try again later.'
         : 'We couldn’t complete that right now. Please try again later.'
   }
-  return isChat
+  return isInsights
+    ? 'Crop insights couldn’t be loaded. Please try again.'
+    : isChat
     ? 'The farm assistant couldn’t reply. Please try again.'
     : isWeather
       ? 'Weather data couldn’t be loaded. Please try again.'
@@ -127,6 +134,20 @@ export interface ForecastResponse {
 export interface ChatTurn {
   role: 'user' | 'assistant'
   content: string
+}
+
+export interface CropInsightActivity {
+  activity: string
+  timing: string
+  reason: string
+}
+
+export interface CropInsight {
+  crop: string
+  headline: string
+  activities: CropInsightActivity[]
+  optimal_conditions: string
+  harvest_guidance: string
 }
 
 function getToken(): string | null {
@@ -245,6 +266,13 @@ export async function fetchCurrentWeather(): Promise<CurrentWeatherResponse> {
 
 export async function fetchForecast(days = 7): Promise<ForecastResponse> {
   return requestJson<ForecastResponse>(`/forecast?days=${days}`)
+}
+
+export async function fetchCropInsights(): Promise<{
+  insights: CropInsight[]
+  message?: string
+}> {
+  return requestJson<{ insights: CropInsight[]; message?: string }>('/chat/insights')
 }
 
 export async function streamFarmChat(

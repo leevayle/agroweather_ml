@@ -144,6 +144,7 @@ unnecessarily recalculate the same forecast.
 | /docs             | GET    | Interactive Swagger UI           |
 | /redoc            | GET    | Alternative documentation        |
 | /chat             | POST   | Authenticated Gemini farm chat    |
+| /chat/insights     | GET    | Authenticated crop insights       |
 +-------------------+--------+----------------------------------+
 
 
@@ -979,4 +980,49 @@ Errors:
         Detailed Gemini diagnostics are available only in the backend log.
 
 
-END OF AGROWEATHER BACKEND API REFERENCE
+    29. GET /chat/insights
+    ======================
+
+    Purpose:
+        Returns Gemini-generated recommendations for the authenticated
+        user's saved crops, informed by up to 24 readings from the previous
+        seven days, the latest available station reading, and up to seven
+        forecast days.
+
+    Authentication:
+        Include the bearer token returned by /auth/login or /auth/signup:
+
+        Authorization: Bearer <access_token>
+
+    Response:
+
+        {
+          "insights": [
+            {
+              "crop": "Maize",
+              "headline": "Plan field work around the coming rain.",
+              "activities": [
+                {
+                  "activity": "Check soil moisture before irrigating.",
+                  "timing": "Before the next forecast rain",
+                  "reason": "Recent and forecast rainfall can affect field moisture."
+                }
+              ],
+              "optimal_conditions": "Keep soil moisture suitable for the crop's current stage.",
+              "harvest_guidance": "Check crop maturity indicators; planting date and growth stage are not available."
+            }
+          ]
+        }
+
+        The response includes one recommendation for each saved crop.
+        Weather-based claims are grounded in available data; harvest readiness
+        is not inferred when planting date and growth stage are unknown. Missing
+        weather data is passed to the assistant as unavailable, not fabricated.
+
+    Errors:
+        401 - missing or invalid access token
+        429 - Gemini usage limit reached
+        503 - assistant configuration or provider unavailable
+
+
+    END OF AGROWEATHER BACKEND API REFERENCE

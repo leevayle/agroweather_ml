@@ -7,11 +7,13 @@ import {
   getStoredUser,
   login,
   signup,
+  fetchCropInsights,
   streamFarmChat,
   updateMyCrops,
   ApiError,
   getUserErrorMessage,
   type AuthUser,
+  type CropInsight,
   type ChatTurn,
   type CurrentWeatherResponse,
   type ForecastDay,
@@ -47,6 +49,7 @@ type IconName =
   | 'pressure'
   | 'plus'
   | 'send'
+  | 'chat'
   | 'bell'
   | 'menu'
   | 'close'
@@ -72,6 +75,7 @@ const iconPaths: Record<IconName, ReactNode> = {
   pressure: <><circle cx="12" cy="12" r="8" /><path d="m12 12 4-3M5 19h14" /></>,
   plus: <path d="M12 5v14M5 12h14" />,
   send: <><path d="m22 2-7 20-4-9-9-4 20-7Z" /><path d="M22 2 11 13" /></>,
+  chat: <><path d="M20 11.5a7.5 7.5 0 0 1-7.5 7.5H6l-3 2v-6a7.5 7.5 0 1 1 17-3.5Z" /><path d="M8 11h.01M12 11h.01M16 11h.01" /></>,
   bell: <><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9ZM10 21h4" /></>,
   menu: <path d="M4 7h16M4 12h16M4 17h16" />,
   close: <path d="m6 6 12 12M18 6 6 18" />,
@@ -515,50 +519,49 @@ function loadChatHistory(userId: string): ChatTurn[] {
   return []
 }
 
-function Insights({ user }: { user: AuthUser }) {
-  const { weather, forecast, weatherError, forecastError, loading, refresh } = useWeatherData()
+function Insights({
+  user,
+  cropInsights,
+  insightsError,
+  insightsLoading,
+  onRefreshInsights,
+}: {
+  user: AuthUser
+  cropInsights: CropInsight[]
+  insightsError: string
+  insightsLoading: boolean
+  onRefreshInsights: () => void
+}) {
   const [messages, setMessages] = useState<ChatTurn[]>(() => loadChatHistory(user.id))
   const [query, setQuery] = useState('')
   const [chatError, setChatError] = useState('')
-  const [floatingReply, setFloatingReply] = useState('')
+  const [streamingReply, setStreamingReply] = useState('')
   const [sending, setSending] = useState(false)
-  const transcriptEnd = useRef<HTMLDivElement>(null)
-  const floatingReplyBody = useRef<HTMLDivElement>(null)
-  const observations = forecast
-    .filter((day) => day.rainfall.rain || (day.rainfall.probability ?? 0) >= 0.3)
-    .map((day) => {
-      const probability = day.rainfall.probability
-      return {
-        title: `Rain forecast for ${new Date(`${day.date}T12:00:00`).toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' })}`,
-        body: `${probability == null ? 'Rain is predicted' : `${Math.round(probability * 100)}% chance of rain`}${day.rainfall.amount_mm == null ? '.' : `, with ${displayValue(day.rainfall.amount_mm, ' mm')} expected.`}`,
-        date: day.date,
-      }
-    })
-  const current = weather?.weather
+  const [chatOpen, setChatOpen] = useState(false)
+  const chatThread = useRef<HTMLDivElement>(null)
   useEffect(() => {
     sessionStorage.setItem(`agroweather_chat_${user.id}`, JSON.stringify(messages))
-    transcriptEnd.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
-  }, [messages, user.id])
-
-  useEffect(() => {
-    if (floatingReplyBody.current) {
-      floatingReplyBody.current.scrollTop = floatingReplyBody.current.scrollHeight
+    if (chatOpen) {
+      const thread = chatThread.current
+      if (thread) thread.scrollTo({ top: thread.scrollHeight, behavior: 'smooth' })
     }
-  }, [floatingReply, chatError])
+  }, [messages, streamingReply, chatError, user.id, chatOpen])
 
   const submitPrompt = async (event?: FormEvent<HTMLFormElement>) => {
     event?.preventDefault()
     const message = query.trim()
     if (!message || sending) return
 
+    setChatOpen(true)
     setSending(true)
     setChatError('')
-    setFloatingReply('')
+    setStreamingReply('')
+    const conversation = messages
+    setMessages((currentMessages) => [...currentMessages, { role: 'user', content: message }])
     try {
-      const reply = await streamFarmChat(message, messages, setFloatingReply)
+      const reply = await streamFarmChat(message, conversation, setStreamingReply)
       setMessages((currentMessages) => [
         ...currentMessages,
-        { role: 'user', content: message },
         { role: 'assistant', content: reply },
       ])
       setQuery('')
@@ -566,47 +569,47 @@ function Insights({ user }: { user: AuthUser }) {
       setChatError(getUserErrorMessage(error, 'The farm assistant couldn’t reply. Please try again.'))
     } finally {
       setSending(false)
+      setStreamingReply('')
     }
   }
 
-  return <main className="app-content insights-page"><PageHeader eyebrow="Based on live API data" title="Weather insights" body="Observations from your current station reading and forecast."><Button variant="secondary" onClick={refresh}>{loading ? 'Updating…' : 'Refresh'}</Button></PageHeader>
-    {(weatherError || forecastError) && <p className="api-error" role="alert">{[weatherError, forecastError].filter(Boolean).join(' ')}</p>}
-    <section className="chat-panel" aria-label="Farm assistant conversation">
-      <div className="chat-heading"><span className="icon-tile amber"><Icon name="spark" /></span><div><h2>Chat with AgroWeather</h2><p>Ask about your farm, crops, current weather, or forecast.</p></div></div>
-      <div className="chat-thread" aria-live="polite">
-        {messages.length === 0 && <div className="chat-message assistant"><b>AgroWeather assistant</b><p>Hi{user.first_name ? ` ${user.first_name}` : ''}! I can help you discuss your farm using its saved details and current weather data. What would you like to know?</p></div>}
-        {messages.map((message, index) => {
-          const isFloatingReply =
-            index === messages.length - 1 &&
-            message.role === 'assistant' &&
-            message.content === floatingReply
-          return isFloatingReply ? null : <article className={`chat-message ${message.role}`} key={`${index}-${message.role}`}><b>{message.role === 'user' ? 'You' : 'AgroWeather assistant'}</b><p>{message.content}</p></article>
-        })}
-        <div ref={transcriptEnd} />
-      </div>
+  return <main className="app-content insights-page"><PageHeader eyebrow="Personalized for your crops" title="Weather insights" body="Crop guidance shaped by recent weather, current conditions, and your 7-day forecast."><Button variant="secondary" onClick={onRefreshInsights}>{insightsLoading ? 'Updating…' : 'Refresh'}</Button></PageHeader>
+    <section className="crop-insights-section" aria-label="Personalized crop insights">
+      <div className="crop-insights-heading"><div><span className="eyebrow"><Icon name="spark" size={14} /> This week on your farm</span><h2>Recommended for your crops</h2><p>Practical next steps based on your farm’s recent and upcoming conditions.</p></div><span className="insight-source-pill"><Icon name="cloud" size={14} /> Gemini + local weather</span></div>
+      {insightsLoading && <div className="crop-insight-loading" role="status"><span className="insight-orbit"><Icon name="spark" /></span><div><b>Preparing your crop brief</b><p>Matching your crops with recent weather and the week ahead…</p></div><span className="typing-dots"><i /><i /><i /></span></div>}
+      {insightsError && !insightsLoading && <div className="crop-insight-message error" role="alert"><Icon name="cloud" /><p>{insightsError}</p><button onClick={onRefreshInsights}>Try again</button></div>}
+      {!insightsLoading && !insightsError && cropInsights.length === 0 && <div className="crop-insight-message"><span className="icon-tile"><Icon name="leaf" /></span><p>Add crops to your farm profile to get weather-based recommendations tailored to what you grow.</p></div>}
+      {!insightsLoading && cropInsights.length > 0 && <div className="crop-insight-grid">{cropInsights.map((insight) => <article className="crop-insight-card" key={insight.crop}>
+        <div className="crop-insight-card-head"><span className="insight-icon green"><Icon name="leaf" /></span><div><span className="tag green-tag">{insight.crop}</span><h3>{insight.headline}</h3></div></div>
+        <div className="crop-insight-conditions"><span className="overline">Conditions to aim for</span><p>{insight.optimal_conditions}</p></div>
+        <div className="crop-actions"><span className="overline">Best next steps</span>{insight.activities.map((activity, index) => <div className="crop-action" key={`${activity.activity}-${index}`}><span className="crop-action-number">{String(index + 1).padStart(2, '0')}</span><div><h4>{activity.activity}</h4><span className="crop-action-timing"><Icon name="clock" size={13} /> {activity.timing}</span><p>{activity.reason}</p></div></div>)}</div>
+        <div className="harvest-note"><Icon name="sun" size={16} /><p><b>Harvest watch</b>{insight.harvest_guidance}</p></div>
+      </article>)}</div>}
     </section>
-    <section className="insight-layout"><div className="insight-feed">
-      {weather?.status === 'online' && current?.temperature_c != null && <article className="insight-card"><div className="insight-icon amber"><Icon name="sun" /></div><div className="insight-content"><span className="tag amber-tag">Current reading</span><h2>{displayValue(current.temperature_c, '°C')} at {weather.station_id || 'your station'}</h2><p>{current.humidity_percent == null ? 'Humidity has not been reported.' : `Humidity is ${displayValue(current.humidity_percent, '%')}.`}{current.wind_speed_kmh == null ? '' : ` Wind is ${displayValue(current.wind_speed_kmh, ' km/h')}.`}</p><div><span><Icon name="station" size={14} /> {weather.station_id || 'Station'}</span><span><Icon name="clock" size={14} /> {weather.timestamp ? new Date(weather.timestamp).toLocaleString() : 'Latest reading'}</span></div></div></article>}
-      {observations.map((item) => <article className="insight-card" key={item.date}><div className="insight-icon blue"><Icon name="rain" /></div><div className="insight-content"><span className="tag blue-tag">Forecast</span><h2>{item.title}</h2><p>{item.body}</p><div><span><Icon name="cloud" size={14} /> {weather?.station_id || 'Farm forecast'}</span></div></div></article>)}
-      {!loading && weather?.status !== 'online' && observations.length === 0 && !weatherError && !forecastError && <p className="empty-state card">No live station readings or rain events are available in the current data.</p>}
-      {loading && <p className="empty-state">Loading weather observations…</p>}
+    <div className="farm-chat-widget" onMouseEnter={() => setChatOpen(true)} onMouseLeave={() => {
+      if (!document.querySelector('.composer-input textarea:focus')) setChatOpen(false)
+    }}>
+      <section className={`chat-history ${chatOpen ? 'is-open' : ''}`} aria-label="Farm assistant conversation" aria-hidden={!chatOpen}>
+        <div className="chat-heading"><span className="icon-tile amber"><Icon name="spark" /></span><div><h2>Chat with AgroWeather</h2><p>Ask about your farm, crops, current weather, or forecast.</p></div></div>
+        <div className="chat-thread" ref={chatThread} aria-live="polite">
+          {messages.length === 0 && <div className="chat-message assistant"><b>AgroWeather assistant</b><p>Hi{user.first_name ? ` ${user.first_name}` : ''}! I can help you plan around your crops and local weather. What would you like to know?</p></div>}
+          {messages.map((message, index) => <article className={`chat-message ${message.role}`} key={`${index}-${message.role}`}><b>{message.role === 'user' ? 'You' : 'AgroWeather assistant'}</b><p>{message.content}</p></article>)}
+          {sending && <article className="chat-message assistant live-reply" role="status"><b>AgroWeather assistant</b>{streamingReply ? <p>{streamingReply}</p> : <span className="typing-dots" aria-label="Waiting for a reply"><i /><i /><i /></span>}</article>}
+          {chatError && <article className="chat-message assistant chat-failure" role="alert"><b>AgroWeather assistant</b><p>{chatError}</p></article>}
+        </div>
+      </section>
+      <button className="farm-chat-launcher" type="button" title="Chat with AgroWeather" aria-label={chatOpen ? 'Close AgroWeather chat history' : 'Open AgroWeather chat history'} aria-expanded={chatOpen} onClick={() => setChatOpen((open) => !open)}><Icon name={chatOpen ? 'close' : 'chat'} size={23} /></button>
     </div>
-      <aside className="insight-side"><article className="card"><span className="eyebrow">Your farm</span><h3>{weather?.station_id || 'Station status'}</h3><p>{weather?.status === 'online' ? 'The backend reports that the station has current data.' : weather?.message || 'No current station data has been reported.'}</p><div className="risk-meter"><span><b>{forecast.length}</b><small>Forecast days</small></span><span><b>{observations.length}</b><small>Rain alerts</small></span><span><b>{current?.humidity_percent == null ? '—' : `${Math.round(current.humidity_percent)}%`}</b><small>Humidity</small></span></div></article><article className="card"><span className="icon-tile amber"><Icon name="spark" /></span><h3>About chat</h3><p>Replies use the farm profile, current weather, and forecast available to AgroWeather. Farm details and prompts are sent to Gemini to generate responses.</p></article></aside>
-    </section>
-    <div className="ai-composer">
-      <div className="ai-composer-inner">
-        {(sending || floatingReply || chatError) && <section className={`ai-reply-float${chatError ? ' has-error' : ''}`} aria-label="Farm assistant reply">
-          <div className="ai-reply-heading"><span>{sending && !floatingReply ? 'AgroWeather is thinking' : chatError ? 'Couldn’t send your message' : 'AgroWeather assistant'}</span><button type="button" onClick={() => { setFloatingReply(''); setChatError('') }} aria-label="Close reply"><Icon name="close" size={16} /></button></div>
-          <div className="ai-reply-body" ref={floatingReplyBody} aria-live="polite">
-            {chatError ? <p>{chatError}</p> : floatingReply ? <p>{floatingReply}</p> : <span className="typing-dots" role="status" aria-label="Waiting for a reply"><i /><i /><i /></span>}
-          </div>
-        </section>}
-        <div className="quick-chips"><span>Try asking:</span>{['Will it rain this week?', 'What crops are on my farm?', 'Summarize my current weather'].map((prompt) => <button key={prompt} type="button" onClick={() => setQuery(prompt)}>{prompt}</button>)}</div>
-        <form className="composer-input" onSubmit={(event) => void submitPrompt(event)}>
-          <textarea rows={1} value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void submitPrompt() } }} placeholder="Ask the farm assistant about your farm…" aria-label="Message the farm assistant" />
-          <button type="submit" disabled={sending || !query.trim()} aria-label="Send message"><Icon name="send" /></button>
-        </form>
-        <small>Weather and crop guidance is informational. Avoid sharing sensitive personal information.</small>
+    <div className="ai-chat-dock">
+      <div className="ai-composer">
+        <div className="ai-composer-inner">
+          <div className="quick-chips"><span>Try asking:</span>{['Will it rain this week?', 'What crops are on my farm?', 'What should I do today?'].map((prompt) => <button key={prompt} type="button" onClick={() => setQuery(prompt)}>{prompt}</button>)}</div>
+          <form className="composer-input" onSubmit={(event) => void submitPrompt(event)}>
+            <textarea rows={1} value={query} onFocus={() => setChatOpen(true)} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void submitPrompt() } }} placeholder="Ask the farm assistant about your farm…" aria-label="Message the farm assistant" />
+            <button type="submit" disabled={sending || !query.trim()} aria-label="Send message"><Icon name="send" /></button>
+          </form>
+          <small>Weather and crop guidance is informational.</small>
+        </div>
       </div>
     </div>
   </main>
@@ -670,6 +673,35 @@ export default function App() {
   const [bootstrapping, setBootstrapping] = useState(true)
   const [pairing, setPairing] = useState(false)
   const [sessionMessage, setSessionMessage] = useState('')
+  const [cropInsights, setCropInsights] = useState<CropInsight[]>([])
+  const [insightsError, setInsightsError] = useState('')
+  const [insightsLoading, setInsightsLoading] = useState(true)
+  const [insightsRefresh, setInsightsRefresh] = useState(0)
+
+  useEffect(() => {
+    if (!user || bootstrapping) return
+
+    let active = true
+    setInsightsLoading(true)
+    setInsightsError('')
+    void fetchCropInsights()
+      .then((result) => {
+        if (active) setCropInsights(result.insights)
+      })
+      .catch((error: unknown) => {
+        if (active) {
+          setInsightsError(
+            getUserErrorMessage(error, 'Crop insights couldn’t be loaded. Please try again.'),
+          )
+        }
+      })
+      .finally(() => {
+        if (active) setInsightsLoading(false)
+      })
+    return () => {
+      active = false
+    }
+  }, [user, bootstrapping, insightsRefresh])
 
   useEffect(() => {
     let active = true
@@ -759,7 +791,7 @@ export default function App() {
     {page === 'dashboard' && <Dashboard user={user} go={go} />}
     {page === 'weather' && <Weather user={user} />}
     {page === 'crops' && <Crops user={user} onUserUpdate={setUser} />}
-    {page === 'insights' && <Insights user={user} />}
+    {page === 'insights' && <Insights user={user} cropInsights={cropInsights} insightsError={insightsError} insightsLoading={insightsLoading} onRefreshInsights={() => setInsightsRefresh((value) => value + 1)} />}
     {page === 'profile' && <Profile user={user} onSignOut={handleSignOut} />}
     {page === 'settings' && <Settings go={go} onPair={() => setPairing(true)} onSignOut={handleSignOut} />}
       {pairing && <PairModal close={() => setPairing(false)} stationCode={user.station_code} />}

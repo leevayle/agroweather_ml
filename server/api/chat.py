@@ -1,6 +1,6 @@
 import json
 import logging
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -10,10 +10,12 @@ from pymongo.errors import PyMongoError
 
 from server.api.auth import get_current_user
 from server.config import GEMINI_API_KEY
+from server.database.mongodb import weather_collection
 from server.services.auth_service import serialize_user
 from server.services.chat_service import (
     ChatConfigurationError,
     ChatProviderError,
+    generate_crop_insights,
     stream_chat_reply,
 )
 from server.services.forecast_service import get_cache_status, get_cached_forecast
@@ -45,6 +47,120 @@ def _farm_context(current_user, weather: Optional[dict], forecast: list) -> dict
         "current_weather": weather,
         "forecast": forecast,
     }
+
+
+def _crop_insight_context(current_user) -> dict:
+    try:
+        current = get_current_weather()
+    except PyMongoError:
+        logger.exception("Could not load current weather for crop insights.")
+        current = None
+    user = serialize_user(current_user)
+    station_id = (
+        (current or {}).get("station_id")
+        or user.get("station_code")
+        or "station_01"
+    )
+    history_start = datetime.now(timezone.utc) - timedelta(days=7)
+    historical_weather = []
+    try:
+        readings = weather_collection.find(
+            {
+                "station_id": station_id,
+                "timestamp": {"$gte": history_start},
+            },
+            {
+                "_id": 0,
+                "station_id": 1,
+                "timestamp": 1,
+                "temperature_c": 1,
+                "humidity_percent": 1,
+                "rainfall_mm": 1,
+                "rain_status": 1,
+                "wind_speed_kmh": 1,
+                "pressure_hpa": 1,
+            },
+        ).sort("timestamp", -1).limit(24)
+        for reading in readings:
+            timestamp = reading.get("timestamp")
+            if isinstance(timestamp, datetime):
+                reading["timestamp"] = timestamp.isoformat()
+            historical_weather.append(reading)
+    except PyMongoError:
+        logger.exception("Could not load recent weather for crop insights.")
+
+    cache = get_cache_status()
+    forecast = []
+    if cache["ready"] and cache["start_date"] and cache["end_date"]:
+        cache_start = date.fromisoformat(cache["start_date"])
+        cache_end = min(
+            date.fromisoformat(cache["end_date"]),
+            cache_start + timedelta(days=6),
+        )
+        forecast = get_cached_forecast(cache_start, cache_end) or []
+
+    current_weather = None
+    if current:
+        current_weather = {
+            key: current.get(key)
+            for key in (
+                "station_id",
+                "temperature_c",
+                "humidity_percent",
+                "day_night",
+                "rain_status",
+                "rainfall_mm",
+                "wind_speed_kmh",
+                "wind_direction_deg",
+                "pressure_hpa",
+                "timestamp",
+            )
+        }
+
+    return {
+        "farm": {
+            "name": user.get("farm_name"),
+            "location": user.get("location"),
+            "size": user.get("acres"),
+            "crops": user.get("crops", []),
+        },
+        "recent_historical_weather_last_7_days": historical_weather,
+        "current_weather": current_weather,
+        "forecast_next_7_days": forecast,
+    }
+
+
+@router.get("/insights")
+def crop_insights(current_user=Depends(get_current_user)):
+    if not GEMINI_API_KEY:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Crop insights are temporarily unavailable. Please try again later.",
+        )
+
+    context = _crop_insight_context(current_user)
+    if not context["farm"]["crops"]:
+        return {"insights": [], "message": "Add crops to your farm to get tailored insights."}
+
+    try:
+        insights = generate_crop_insights(context)
+    except ChatConfigurationError as exc:
+        logger.error("Crop insights configuration error: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Crop insights are temporarily unavailable. Please try again later.",
+        ) from exc
+    except ChatProviderError as exc:
+        logger.warning(
+            "Crop insight provider request failed (status=%s): %s",
+            exc.status_code,
+            exc.diagnostic or "No additional provider details.",
+        )
+        raise HTTPException(
+            status_code=exc.status_code,
+            detail=str(exc),
+        ) from exc
+    return {"insights": insights}
 
 
 @router.post("")

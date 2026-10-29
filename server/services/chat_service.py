@@ -216,3 +216,98 @@ def stream_chat_reply(
             "The farm assistant is temporarily unavailable. Please try again later.",
             diagnostic="Gemini Interactions API stream completed without text output.",
         )
+
+
+def generate_crop_insights(farm_context: Dict[str, Any]) -> List[Dict[str, Any]]:
+    crops = farm_context.get("farm", {}).get("crops", [])
+    if not crops:
+        return []
+
+    prompt = (
+        "Create a practical, crop-specific farm brief using the supplied "
+        "farm context. Consider the recent historical weather, current "
+        "station reading, and each available day in the next seven-day "
+        "forecast. Use the location and each saved crop.\n\n"
+        "Return only one valid JSON object, with no Markdown fences or "
+        "extra text, in exactly this shape:\n"
+        '{"insights":[{"crop":"crop name","headline":"short summary",'
+        '"activities":[{"activity":"specific task","timing":"best time or '
+        'forecast date","reason":"weather-based reason"}],'
+        '"optimal_conditions":"conditions that suit this crop now",'
+        '"harvest_guidance":"careful harvest advice"}]}\n\n'
+        "Provide one insight for each saved crop and one to three useful "
+        "activities per crop. Ground weather claims in the supplied "
+        "readings and forecast; do not invent temperatures, rainfall, "
+        "dates, or historical trends. Separate observed/forecast data from "
+        "general crop knowledge. Recommend a specific time or date only "
+        "when the supplied forecast supports it. Do not claim a crop is "
+        "ready to harvest or predict a harvest date without planting date, "
+        "variety, or growth-stage information; instead explain what signs "
+        "to check. If weather data is missing, say so and keep advice "
+        "general. Keep each field concise and actionable."
+    )
+    response_text = "".join(stream_chat_reply(prompt, [], farm_context)).strip()
+    if response_text.startswith("```"):
+        response_text = re.sub(r"^```(?:json)?\s*|\s*```$", "", response_text)
+
+    try:
+        response = json.loads(response_text)
+    except json.JSONDecodeError as exc:
+        raise ChatProviderError(
+            "Crop insights are temporarily unavailable. Please try again later.",
+            diagnostic="Gemini crop insights response was not valid JSON.",
+        ) from exc
+
+    raw_insights = response.get("insights") if isinstance(response, dict) else None
+    if not isinstance(raw_insights, list):
+        raise ChatProviderError(
+            "Crop insights are temporarily unavailable. Please try again later.",
+            diagnostic="Gemini crop insights response had an invalid shape.",
+        )
+
+    known_crops = {str(crop).casefold(): str(crop) for crop in crops}
+    insights_by_crop = {}
+    for item in raw_insights:
+        if not isinstance(item, dict):
+            continue
+        crop = item.get("crop")
+        if not isinstance(crop, str) or crop.casefold() not in known_crops:
+            continue
+        activities = item.get("activities")
+        normalized_activities = []
+        if isinstance(activities, list):
+            for activity in activities[:3]:
+                if not isinstance(activity, dict):
+                    continue
+                fields = {
+                    key: activity.get(key)
+                    for key in ("activity", "timing", "reason")
+                }
+                if all(isinstance(value, str) and value.strip() for value in fields.values()):
+                    normalized_activities.append(
+                        {key: value.strip()[:500] for key, value in fields.items()}
+                    )
+        text_fields = {
+            key: item.get(key)
+            for key in ("headline", "optimal_conditions", "harvest_guidance")
+        }
+        if (
+            not normalized_activities
+            or not all(isinstance(value, str) and value.strip() for value in text_fields.values())
+        ):
+            continue
+        crop_key = crop.casefold()
+        insights_by_crop[crop_key] = {
+            "crop": known_crops[crop_key],
+            "headline": text_fields["headline"].strip()[:500],
+            "activities": normalized_activities,
+            "optimal_conditions": text_fields["optimal_conditions"].strip()[:700],
+            "harvest_guidance": text_fields["harvest_guidance"].strip()[:700],
+        }
+
+    if not known_crops or any(crop not in insights_by_crop for crop in known_crops):
+        raise ChatProviderError(
+            "Crop insights are temporarily unavailable. Please try again later.",
+            diagnostic="Gemini did not return complete insights for every saved crop.",
+        )
+    return [insights_by_crop[crop] for crop in known_crops]
