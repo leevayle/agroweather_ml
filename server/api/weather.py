@@ -20,14 +20,16 @@ router = APIRouter(
 # ============================================================
 
 @router.get("/current")
-def current_weather():
+def current_weather(
+    station_id: Optional[str] = Query(default=None, min_length=1, max_length=64),
+):
 
-    weather = get_current_weather()
+    weather = get_current_weather(station_id)
 
     if weather is None:
 
         return {
-            "station_id": "station_01",
+            "station_id": station_id or "station_01",
             "status": "waiting_for_data",
             "message": (
                 "No weather data has been received yet."

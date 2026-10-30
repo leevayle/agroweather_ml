@@ -4,8 +4,8 @@ import tailwindcss from '@tailwindcss/vite'
 import fs from 'node:fs'
 import path from 'node:path'
 
-// Fallback site configuration since site.json is optional
-const siteConfiguration = {}
+import siteConfiguration from './.figma/make/site.json'
+
 
 // Vite config — https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
@@ -19,7 +19,7 @@ export default defineConfig(({ mode }) => {
       minify: !emitSourcemaps,
     },
     plugins: [
-      react(),
+react(),
       tailwindcss(),
       figmaSiteConfiguration(siteConfiguration),
       figmaErrorOverlayReplay(),
@@ -39,7 +39,7 @@ export default defineConfig(({ mode }) => {
       watch: {
         ignored: [
           '**/.figma/**',
-        ],
+],
       },
     },
     preview: {
@@ -222,7 +222,16 @@ function figmaSiteConfiguration(config: FigmaSiteConfiguration): Plugin {
 
 /**
  * Replay the most recent build error to clients that connect after
- * it was first broadcast.
+ * it was first broadcast. Vite buffers an error payload only while
+ * no clients are connected and clears the buffer on the first
+ * reconnect (see `bufferedMessage` in `createWebSocketServer`), so
+ * if the preview iframe reloads after Vite already delivered an
+ * error to a live socket, the new socket misses the payload and
+ * the overlay stays hidden even though the build is still broken.
+ * We intercept `ws.send` to remember the latest error and replay
+ * it on every new connection; the cache clears on a successful
+ * `update` or `full-reload` so a stale overlay can't survive a
+ * fixed build.
  */
 function figmaErrorOverlayReplay(): Plugin {
   return {
@@ -255,7 +264,16 @@ function figmaErrorOverlayReplay(): Plugin {
 }
 
 /**
- * Reload when a module that previously defined a React Refresh boundary stops defining one.
+ * Reload when a module that previously defined a React Refresh boundary stops
+ * defining one. This happens when an agent moves a component into a new file
+ * and replaces the old module with a re-export:
+ *
+ *   export { default } from './app/App'
+ *
+ * Vite otherwise accepts the update using the previous module's HMR boundary,
+ * but the re-export-only transform no longer registers a replacement for the
+ * mounted component family. React reports a successful refresh while leaving
+ * the old tree mounted until the page is reloaded.
  */
 function figmaReactRefreshBoundaryFallback(): Plugin {
   type ModuleNode = import('vite').ModuleNode
@@ -313,7 +331,15 @@ function figmaReactRefreshBoundaryFallback(): Plugin {
 }
 
 /**
- * Serves a blank render-target page at /.figma/make/kit.html
+ * Serves a blank render-target page at /.figma/make/kit.html that
+ * the Figma preview script drives directly. The page exposes a
+ * registry of every file matching `storiesGlob` on
+ * window.__FIGMA__.stories so the design surface can dynamically
+ * import + mount each entry into its own grid view.
+ *
+ * Dev-only: `apply: 'serve'` gates the plugin to `vite dev`. Prod
+ * builds (`vite build`) skip it entirely so the route doesn't leak
+ * into shipped bundles.
  */
 function figmaMakeKitPlugin(options: { storiesGlob: string | string[] }): Plugin {
   const storiesGlob = Array.isArray(options.storiesGlob) ? options.storiesGlob : [options.storiesGlob]
@@ -365,7 +391,10 @@ function figmaMakeKitPlugin(options: { storiesGlob: string | string[] }): Plugin
 }
 
 /**
- * Reports the sources of dependencies linked from outside node_modules
+ * Reports the sources of dependencies linked from outside node_modules (pnpm
+ * or npm workspaces, `file:`, `link:`) under `node_modules/<name>/`, the way
+ * installed packages appear in sourcemaps. Vite otherwise reports their real
+ * path, such as `libraries/<name>/`.
  */
 function figmaLinkedPackageSourcemaps(): Plugin {
   const packageJson = JSON.parse(fs.readFileSync(path.resolve(__dirname, 'package.json'), 'utf8'))
@@ -395,6 +424,7 @@ function figmaLinkedPackageSourcemaps(): Plugin {
         return { map: JSON.parse(fs.readFileSync(mapFile, 'utf8')), mapDir: path.dirname(mapFile) }
       }
     } catch {}
+    // Without a usable input map, map every line to itself.
     const mappings = code.split('\n').map((_, i) => (i ? 'AACA' : 'AAAA'))
     const map = { version: 3, sources: [file], sourcesContent: [code], names: [], mappings: mappings.join(';') }
     return { map, mapDir: path.dirname(file) }
@@ -404,6 +434,7 @@ function figmaLinkedPackageSourcemaps(): Plugin {
     name: 'figma-linked-package-sourcemaps',
     enforce: 'pre',
     load(id) {
+      // Leave queried imports such as ?raw and ?url to Vite's own loaders.
       if (id.includes('?') || !/\.[cm]?[jt]sx?$/.test(id) || !installedPath(id)) return null
 
       const code = fs.readFileSync(id, 'utf8')

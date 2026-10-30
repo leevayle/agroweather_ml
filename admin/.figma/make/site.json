@@ -1,0 +1,10 @@
+{
+  "description": "An operations portal for AgroWeather administrators to manage users, weather stations, infrastructure, and audit logs while monitoring platform health.",
+  "robots": {
+    "index": false
+  },
+  "accessibility": {
+    "addBypassLinks": false,
+    "ignoreReducedMotion": false
+  }
+}

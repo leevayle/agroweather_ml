@@ -1,3 +1,4 @@
+import re
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -12,6 +13,7 @@ from server.services.auth_service import (
     register_user,
     serialize_user,
     update_user_crops,
+    update_user_station,
 )
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
@@ -36,6 +38,10 @@ class LoginRequest(BaseModel):
 
 class CropListUpdateRequest(BaseModel):
     crops: List[str] = Field(default_factory=list)
+
+
+class StationUpdateRequest(BaseModel):
+    station_code: str = Field(min_length=1, max_length=64)
 
 
 class AuthResponse(BaseModel):
@@ -111,4 +117,20 @@ def update_my_crops(
 
     unique_crops = list({crop.casefold(): crop for crop in crops}.values())
     updated_user = update_user_crops(current_user, unique_crops)
+    return serialize_user(updated_user)
+
+
+@router.put("/me/station")
+def update_my_station(
+    body: StationUpdateRequest,
+    current_user=Depends(get_current_user),
+):
+    station_code = body.station_code.strip()
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}", station_code):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Enter a valid station code using letters, numbers, hyphens, or underscores.",
+        )
+
+    updated_user = update_user_station(current_user, station_code)
     return serialize_user(updated_user)

@@ -3,3 +3,14 @@ Add crop planting date for each user crop ( so we know when we can harvest)
 Add admin portal for management of users and stations
 Change favicon to logo
 Remove the cresent-like active nav selector in the admin dash (it gives away ai vibes)
+
+
+
+
+FLAWS OF CURRENT SYSTEM 
+- Forecast dataset ends in 2025-10-25 - prediction is a nightmare we have to predict, fill the missing values then use that as a dataset to train then predict any dates ahead of it.
+- AI right now is not streamlined, it's barely working:
+    For chat and insights, we dump the whole 10 previous chats and the forecast for 7 days and crops and user details and an instruction prompt and expect a strictly formatted json back to fit in the ui.
+
+- We cannot pair stations we have just not configured the endpoints for the same.
+    

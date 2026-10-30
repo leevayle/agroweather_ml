@@ -1,10 +1,11 @@
 import { defineConfig, type HtmlTagDescriptor, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
+import fs from 'node:fs'
 import path from 'node:path'
 
-import siteConfiguration from './.figma/make/site.json'
-
+// Fallback site configuration since site.json is optional
+const siteConfiguration = { icons: { icon: '/logo.webp?v=2' } }
 
 // Vite config — https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
@@ -18,12 +19,13 @@ export default defineConfig(({ mode }) => {
       minify: !emitSourcemaps,
     },
     plugins: [
-react(),
+      react(),
       tailwindcss(),
       figmaSiteConfiguration(siteConfiguration),
       figmaErrorOverlayReplay(),
       figmaReactRefreshBoundaryFallback(),
       figmaMakeKitPlugin({ storiesGlob: '/src/**/*.stories.{ts,tsx,js,jsx}' }),
+      figmaLinkedPackageSourcemaps(),
     ],
     resolve: {
       alias: {
@@ -37,7 +39,7 @@ react(),
       watch: {
         ignored: [
           '**/.figma/**',
-],
+        ],
       },
     },
     preview: {
@@ -88,7 +90,9 @@ function figmaSiteConfiguration(config: FigmaSiteConfiguration): Plugin {
 
   const title = config.title ?? "Figma Make App"
   const description = config.description ?? ''
-  const favicon = config.icons?.icon ?? ''
+  // Use the configured app favicon instead of the Figma Make default.
+  const favicon = config.icons?.icon ?? '/favicon.svg'
+  const faviconType = favicon.split(/[?#]/, 1)[0].toLowerCase().endsWith('.webp') ? 'image/webp' : undefined
   const socialImage = config.openGraph?.image ?? ''
   const language = sanitizeHtmlValue(config.language) || 'en'
   const googleAnalyticsId = sanitizeHtmlValue(config.analytics?.googleAnalyticsId)
@@ -136,7 +140,11 @@ function figmaSiteConfiguration(config: FigmaSiteConfiguration): Plugin {
           tags.push({ tag: 'meta', attrs: { name: 'robots', content: 'noindex, nofollow' }, injectTo: 'head' })
         }
         if (favicon) {
-          tags.push({ tag: 'link', attrs: { rel: 'icon', href: favicon }, injectTo: 'head' })
+          tags.push({
+            tag: 'link',
+            attrs: { rel: 'icon', ...(faviconType ? { type: faviconType } : {}), href: favicon },
+            injectTo: 'head',
+          })
         }
         if (title) {
           tags.push({ tag: 'meta', attrs: { property: 'og:title', content: title }, injectTo: 'head' })
@@ -219,16 +227,7 @@ function figmaSiteConfiguration(config: FigmaSiteConfiguration): Plugin {
 
 /**
  * Replay the most recent build error to clients that connect after
- * it was first broadcast. Vite buffers an error payload only while
- * no clients are connected and clears the buffer on the first
- * reconnect (see `bufferedMessage` in `createWebSocketServer`), so
- * if the preview iframe reloads after Vite already delivered an
- * error to a live socket, the new socket misses the payload and
- * the overlay stays hidden even though the build is still broken.
- * We intercept `ws.send` to remember the latest error and replay
- * it on every new connection; the cache clears on a successful
- * `update` or `full-reload` so a stale overlay can't survive a
- * fixed build.
+ * it was first broadcast.
  */
 function figmaErrorOverlayReplay(): Plugin {
   return {
@@ -261,19 +260,12 @@ function figmaErrorOverlayReplay(): Plugin {
 }
 
 /**
- * Reload when a module that previously defined a React Refresh boundary stops
- * defining one. This happens when an agent moves a component into a new file
- * and replaces the old module with a re-export:
- *
- *   export { default } from './app/App'
- *
- * Vite otherwise accepts the update using the previous module's HMR boundary,
- * but the re-export-only transform no longer registers a replacement for the
- * mounted component family. React reports a successful refresh while leaving
- * the old tree mounted until the page is reloaded.
+ * Reload when a module that previously defined a React Refresh boundary stops defining one.
  */
 function figmaReactRefreshBoundaryFallback(): Plugin {
+  type ModuleNode = import('vite').ModuleNode
   const hadRefreshBoundary = new Map<string, boolean>()
+  const lostRefreshBoundaries = new Set<string>()
   let sendFullReload: (() => void) | null = null
 
   return {
@@ -283,6 +275,29 @@ function figmaReactRefreshBoundaryFallback(): Plugin {
     configureServer(server) {
       sendFullReload = () => server.ws.send({ type: 'full-reload', path: '*' })
     },
+    handleHotUpdate({ modules, server, timestamp }) {
+      if (lostRefreshBoundaries.size === 0) return
+
+      const visited = new Set<ModuleNode>()
+      const pending = [...modules]
+      while (pending.length > 0) {
+        const current = pending.pop()
+        if (!current || visited.has(current)) continue
+        visited.add(current)
+
+        const moduleId = current.id?.split('?')[0]
+        if (moduleId && lostRefreshBoundaries.has(moduleId)) {
+          const invalidated = new Set<ModuleNode>()
+          for (const updatedModule of modules) {
+            server.moduleGraph.invalidateModule(updatedModule, invalidated, timestamp, true)
+          }
+          sendFullReload?.()
+          return []
+        }
+
+        pending.push(...current.importers)
+      }
+    },
     transform(code, id) {
       if (!/\.[jt]sx?(?:\?|$)/.test(id) || id.includes('/node_modules/')) return null
 
@@ -291,7 +306,9 @@ function figmaReactRefreshBoundaryFallback(): Plugin {
       const previousHadRefreshBoundary = hadRefreshBoundary.get(moduleId)
       hadRefreshBoundary.set(moduleId, hasRefreshBoundary)
 
+      if (hasRefreshBoundary) lostRefreshBoundaries.delete(moduleId)
       if (previousHadRefreshBoundary && !hasRefreshBoundary) {
+        lostRefreshBoundaries.add(moduleId)
         queueMicrotask(() => sendFullReload?.())
       }
 
@@ -301,15 +318,7 @@ function figmaReactRefreshBoundaryFallback(): Plugin {
 }
 
 /**
- * Serves a blank render-target page at /.figma/make/kit.html that
- * the Figma preview script drives directly. The page exposes a
- * registry of every file matching `storiesGlob` on
- * window.__FIGMA__.stories so the design surface can dynamically
- * import + mount each entry into its own grid view.
- *
- * Dev-only: `apply: 'serve'` gates the plugin to `vite dev`. Prod
- * builds (`vite build`) skip it entirely so the route doesn't leak
- * into shipped bundles.
+ * Serves a blank render-target page at /.figma/make/kit.html
  */
 function figmaMakeKitPlugin(options: { storiesGlob: string | string[] }): Plugin {
   const storiesGlob = Array.isArray(options.storiesGlob) ? options.storiesGlob : [options.storiesGlob]
@@ -356,6 +365,61 @@ function figmaMakeKitPlugin(options: { storiesGlob: string | string[] }): Plugin
           next(err as Error)
         }
       })
+    },
+  }
+}
+
+/**
+ * Reports the sources of dependencies linked from outside node_modules
+ */
+function figmaLinkedPackageSourcemaps(): Plugin {
+  const packageJson = JSON.parse(fs.readFileSync(path.resolve(__dirname, 'package.json'), 'utf8'))
+  const linkedPackages = Object.keys({ ...packageJson.dependencies, ...packageJson.devDependencies }).flatMap((name) => {
+    const installedDir = path.resolve(__dirname, 'node_modules', name)
+    try {
+      const realDir = fs.realpathSync(installedDir)
+      return realDir.split(path.sep).includes('node_modules') ? [] : [{ installedDir, realDir }]
+    } catch {
+      return []
+    }
+  })
+  const sourceMappingUrl = /\/\/# sourceMappingURL=(\S+)\s*$/
+
+  function installedPath(file: string) {
+    const linked = linkedPackages.find(({ realDir }) => file.startsWith(realDir + path.sep))
+    return linked && path.join(linked.installedDir, path.relative(linked.realDir, file))
+  }
+  function readSourceMap(file: string, code: string) {
+    const url = sourceMappingUrl.exec(code)?.[1]
+    try {
+      if (url?.startsWith('data:')) {
+        return { map: JSON.parse(Buffer.from(url.split(',')[1], 'base64').toString()), mapDir: path.dirname(file) }
+      }
+      if (url) {
+        const mapFile = path.resolve(path.dirname(file), url)
+        return { map: JSON.parse(fs.readFileSync(mapFile, 'utf8')), mapDir: path.dirname(mapFile) }
+      }
+    } catch {}
+    const mappings = code.split('\n').map((_, i) => (i ? 'AACA' : 'AAAA'))
+    const map = { version: 3, sources: [file], sourcesContent: [code], names: [], mappings: mappings.join(';') }
+    return { map, mapDir: path.dirname(file) }
+  }
+
+  return {
+    name: 'figma-linked-package-sourcemaps',
+    enforce: 'pre',
+    load(id) {
+      if (id.includes('?') || !/\.[cm]?[jt]sx?$/.test(id) || !installedPath(id)) return null
+
+      const code = fs.readFileSync(id, 'utf8')
+      const { map, mapDir } = readSourceMap(id, code)
+      const sourceRoot = path.resolve(mapDir, map.sourceRoot ?? '')
+      map.sources = map.sources.map((source: string) => {
+        const original = path.resolve(sourceRoot, source)
+        return installedPath(original) ?? original
+      })
+      delete map.sourceRoot
+      return { code: code.replace(sourceMappingUrl, ''), map }
     },
   }
 }

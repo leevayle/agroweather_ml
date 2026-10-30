@@ -119,6 +119,28 @@ def update_user_crops(
     return updated_user
 
 
+def update_user_station(
+    user: Dict[str, Any],
+    station_code: str,
+) -> Dict[str, Any]:
+    updated_at = datetime.now(timezone.utc)
+    result = users_collection.update_one(
+        {"_id": user["_id"]},
+        {
+            "$set": {
+                "station_code": station_code,
+                "updated_at": updated_at,
+            },
+        },
+    )
+    if result.matched_count != 1:
+        raise RuntimeError("Could not save the selected weather station.")
+    updated_user = user.copy()
+    updated_user["station_code"] = station_code
+    updated_user["updated_at"] = updated_at
+    return updated_user
+
+
 def authenticate_user(email: str, password: str) -> Dict[str, Any]:
     user = find_user_by_email(email)
     if not user:

@@ -50,12 +50,12 @@ def _farm_context(current_user, weather: Optional[dict], forecast: list) -> dict
 
 
 def _crop_insight_context(current_user) -> dict:
+    user = serialize_user(current_user)
     try:
-        current = get_current_weather()
+        current = get_current_weather(user.get("station_code"))
     except PyMongoError:
         logger.exception("Could not load current weather for crop insights.")
         current = None
-    user = serialize_user(current_user)
     station_id = (
         (current or {}).get("station_id")
         or user.get("station_code")
@@ -187,8 +187,9 @@ def farm_chat(
             detail="Farm chat is not configured. Set GEMINI_API_KEY in the backend environment.",
         )
 
+    user = serialize_user(current_user)
     try:
-        current = get_current_weather()
+        current = get_current_weather(user.get("station_code"))
     except PyMongoError:
         logger.exception("Could not load current weather for farm chat context.")
         current = None

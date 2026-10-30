@@ -146,11 +146,19 @@ def save_weather_reading(
 # GET CURRENT WEATHER
 # ============================================================
 
-def get_current_weather() -> Optional[Dict[str, Any]]:
+def get_current_weather(
+    station_id: Optional[str] = None,
+) -> Optional[Dict[str, Any]]:
 
     with _cache_lock:
 
-        if _current_weather is not None:
+        if (
+            _current_weather is not None
+            and (
+                station_id is None
+                or _current_weather.get("station_id") == station_id
+            )
+        ):
             return _current_weather.copy()
 
 
@@ -158,11 +166,10 @@ def get_current_weather() -> Optional[Dict[str, Any]]:
     # Fallback to MongoDB
     # --------------------------------------------------------
 
+    query = {"station_id": station_id} if station_id else {}
     latest = weather_collection.find_one(
-        {},
-        sort=[
-            ("timestamp", -1),
-        ],
+        query,
+        sort=[("timestamp", -1)],
     )
 
     if latest is None:

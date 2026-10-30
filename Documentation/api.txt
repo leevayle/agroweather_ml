@@ -1125,5 +1125,33 @@ Errors:
     Deletes one task owned by the authenticated user. Returns
     `{"deleted": true}` when successful.
 
+    34. PUT /auth/me/station
+    =======================
+
+    Saves the station code for the authenticated user's farm. A newly
+    selected station replaces the previous station code.
+
+    Authentication:
+        Include the bearer token returned by /auth/login or /auth/signup.
+
+    Request:
+
+        PUT /auth/me/station
+        Content-Type: application/json
+
+        {
+          "station_code": "station_01"
+        }
+
+    Station codes may contain letters, numbers, hyphens, and underscores.
+    The response is the updated user profile.
+
+    35. GET /weather/current?station_id={station_id}
+    ===============================================
+
+    Optionally filters the current reading to the requested station ID.
+    If no reading is available for that station, the response has
+    `status: "waiting_for_data"` and includes the requested station ID.
+
 
     END OF AGROWEATHER BACKEND API REFERENCE

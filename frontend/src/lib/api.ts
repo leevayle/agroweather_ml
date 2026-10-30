@@ -1,7 +1,3 @@
-/**
- * AgroWeather API client
- */
-
 const RAW_BASE = import.meta.env.VITE_API_URL as string | undefined
 
 export const API_BASE = (RAW_BASE ?? (import.meta.env.DEV ? 'http://localhost:8000' : '')).replace(
@@ -12,9 +8,67 @@ export const API_BASE = (RAW_BASE ?? (import.meta.env.DEV ? 'http://localhost:80
 const TOKEN_KEY = 'agroweather_token'
 const USER_KEY = 'agroweather_user'
 
-function url(path: string): string {
-  if (!path.startsWith('/')) path = `/${path}`
-  return `${API_BASE}${path}`
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message)
+    this.name = 'ApiError'
+  }
+}
+
+export function getUserErrorMessage(error: unknown, fallback: string): string {
+  return error instanceof ApiError ? error.message : fallback
+}
+
+function getHttpErrorMessage(path: string, status: number): string {
+  const isChat = path.startsWith('/chat')
+  const isInsights = path === '/chat/insights'
+  const isCalendar = path.startsWith('/calendar')
+  const isWeather = path.startsWith('/weather') || path.startsWith('/forecast')
+  const isLogin = path === '/auth/login'
+  const isSignup = path === '/auth/signup'
+
+  if (status === 401) {
+    return isLogin
+      ? 'Email or password doesn’t match our records. Check your details and try again.'
+      : 'Your session has expired. Please sign in again.'
+  }
+  if (status === 403) return 'You don’t have permission to do that.'
+  if (status === 400 || status === 409) {
+    return isSignup
+      ? 'We couldn’t create your account. Check your details and try again.'
+      : 'Please check your information and try again.'
+  }
+  if (status === 422) return 'Please check your information and try again.'
+  if (status === 429) {
+    return isInsights
+      ? 'Crop insights are busy right now. Please try again shortly.'
+      : isChat
+      ? 'The farm assistant is busy right now. Please try again shortly.'
+      : 'Please wait a moment and try again.'
+  }
+  if (status >= 500) {
+    return isInsights
+      ? 'Crop insights are temporarily unavailable. Please try again later.'
+      : isCalendar
+      ? 'Your calendar couldn’t be updated. Please try again.'
+      : isChat
+      ? 'The farm assistant is temporarily unavailable. Please try again later.'
+      : isWeather
+        ? 'Weather data is temporarily unavailable. Please try again later.'
+        : 'We couldn’t complete that right now. Please try again later.'
+  }
+  return isInsights
+    ? 'Crop insights couldn’t be loaded. Please try again.'
+    : isCalendar
+    ? 'Your calendar couldn’t be updated. Please try again.'
+    : isChat
+    ? 'The farm assistant couldn’t reply. Please try again.'
+    : isWeather
+      ? 'Weather data couldn’t be loaded. Please try again.'
+      : 'Something went wrong. Please try again.'
 }
 
 export interface AuthUser {
@@ -33,13 +87,6 @@ export interface AuthResponse {
   access_token: string
   token_type: string
   user: AuthUser
-}
-
-export interface ContactMessage {
-  name: string
-  email: string
-  phone?: string
-  message: string
 }
 
 export interface CurrentWeatherData {
@@ -63,22 +110,18 @@ export interface CurrentWeatherResponse {
   timestamp: string | null
 }
 
-export interface ForecastTemperature {
-  avg_c: number | null
-  min_c: number | null
-  max_c: number | null
-}
-
-export interface ForecastRainfall {
-  rain: boolean
-  probability: number | null
-  amount_mm: number | null
-}
-
 export interface ForecastDay {
   date: string
-  temperature: ForecastTemperature
-  rainfall: ForecastRainfall
+  temperature: {
+    avg_c: number | null
+    min_c: number | null
+    max_c: number | null
+  }
+  rainfall: {
+    rain: boolean
+    probability: number | null
+    amount_mm: number | null
+  }
   wind_speed: number | null
   pressure_hpa: number | null
 }
@@ -93,24 +136,59 @@ export interface ForecastResponse {
   status?: string
 }
 
-export function getToken(): string | null {
-  try {
-    return localStorage.getItem(TOKEN_KEY)
-  } catch {
-    return null
-  }
+export interface ChatTurn {
+  role: 'user' | 'assistant'
+  content: string
+}
+
+export interface CropInsightActivity {
+  activity: string
+  timing: string
+  reason: string
+}
+
+export interface CropInsight {
+  crop: string
+  headline: string
+  activities: CropInsightActivity[]
+  optimal_conditions: string
+  harvest_guidance: string
+}
+
+export interface CalendarTaskResponse {
+  message: string
+  created: boolean
+  task: CalendarTask | null
+}
+
+export interface CalendarTask {
+  id: string
+  crop: string
+  activity: string
+  timing: string
+  reason: string
+  date: string | null
+  status: 'planned' | 'completed'
+  created_at: string | null
+}
+
+function getToken(): string | null {
+  return localStorage.getItem(TOKEN_KEY)
 }
 
 export function getStoredUser(): AuthUser | null {
+  const raw = localStorage.getItem(USER_KEY)
+  if (!raw) return null
+
   try {
-    const raw = localStorage.getItem(USER_KEY)
-    return raw ? (JSON.parse(raw) as AuthUser) : null
+    return JSON.parse(raw) as AuthUser
   } catch {
+    localStorage.removeItem(USER_KEY)
     return null
   }
 }
 
-export function saveSession(token: string, user: AuthUser): void {
+function saveSession(token: string, user: AuthUser): void {
   localStorage.setItem(TOKEN_KEY, token)
   localStorage.setItem(USER_KEY, JSON.stringify(user))
 }
@@ -121,22 +199,30 @@ export function clearSession(): void {
 }
 
 async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
-  const headers: Record<string, string> = {
-    Accept: 'application/json',
-    ...(init?.headers as Record<string, string> | undefined),
+  const headers = new Headers(init?.headers)
+  headers.set('Accept', 'application/json')
+  if (init?.body && !headers.has('Content-Type')) {
+    headers.set('Content-Type', 'application/json')
   }
 
   const token = getToken()
-  if (token) headers.Authorization = `Bearer ${token}`
+  if (token) headers.set('Authorization', `Bearer ${token}`)
 
-  if (init?.body && !headers['Content-Type']) {
-    headers['Content-Type'] = 'application/json'
+  let response: Response
+  try {
+    response = await fetch(`${API_BASE}${path}`, { ...init, headers })
+  } catch (error) {
+    if (error instanceof TypeError) {
+      throw new ApiError(
+        'We’re having trouble connecting. Check your connection and try again.',
+        0,
+      )
+    }
+    throw error
   }
-
-  const res = await fetch(url(path), { ...init, headers })
-
+  const text = await response.text()
   let data: unknown = null
-  const text = await res.text()
+
   if (text) {
     try {
       data = JSON.parse(text)
@@ -145,12 +231,8 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
     }
   }
 
-  if (!res.ok) {
-    const detail =
-      data && typeof data === 'object' && data !== null && 'detail' in data
-        ? String((data as { detail: unknown }).detail)
-        : `Request failed (${res.status})`
-    throw new Error(detail)
+  if (!response.ok) {
+    throw new ApiError(getHttpErrorMessage(path, response.status), response.status)
   }
 
   return data as T
@@ -200,71 +282,168 @@ export async function updateMyCrops(crops: string[]): Promise<AuthUser> {
   return user
 }
 
-export function logout(): void {
-  clearSession()
+export async function updateMyStation(stationCode: string): Promise<AuthUser> {
+  const user = await requestJson<AuthUser>('/auth/me/station', {
+    method: 'PUT',
+    body: JSON.stringify({ station_code: stationCode }),
+  })
+  const token = getToken()
+  if (token) saveSession(token, user)
+  return user
 }
 
-export async function fetchCurrentWeather(): Promise<CurrentWeatherResponse> {
-  return requestJson<CurrentWeatherResponse>('/weather/current')
+export async function fetchCurrentWeather(stationId?: string | null): Promise<CurrentWeatherResponse> {
+  const query = stationId ? `?station_id=${encodeURIComponent(stationId)}` : ''
+  return requestJson<CurrentWeatherResponse>(`/weather/current${query}`)
 }
 
 export async function fetchForecast(days = 7): Promise<ForecastResponse> {
   return requestJson<ForecastResponse>(`/forecast?days=${days}`)
 }
 
-export async function fetchHealth(): Promise<Record<string, unknown>> {
-  return requestJson('/health')
+export async function fetchCropInsights(): Promise<{
+  insights: CropInsight[]
+  message?: string
+}> {
+  return requestJson<{ insights: CropInsight[]; message?: string }>('/chat/insights')
 }
 
-export async function sendContactMessage(payload: ContactMessage): Promise<{ status: string }> {
-  return requestJson('/contact', {
+export async function addCalendarTask(task: {
+  crop: string
+  activity: string
+  timing: string
+  reason: string
+}): Promise<CalendarTaskResponse> {
+  return requestJson<CalendarTaskResponse>('/calendar/tasks', {
     method: 'POST',
-    body: JSON.stringify(payload),
+    body: JSON.stringify(task),
   })
 }
 
-export function displayValue(
-  value: number | null | undefined,
-  suffix = '',
-  digits?: number,
-): string {
-  if (value == null || Number.isNaN(value)) return '—'
-  const n = digits != null ? Number(value).toFixed(digits) : String(value)
-  return `${n}${suffix}`
+export async function fetchCalendarTasks(start: string, end: string): Promise<CalendarTask[]> {
+  const result = await requestJson<{ tasks: CalendarTask[] }>(
+    `/calendar/tasks?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`,
+  )
+  return result.tasks
 }
 
-export function weekdayLabel(isoDate: string): string {
+export async function updateCalendarTask(
+  taskId: string,
+  changes: Partial<Pick<CalendarTask, 'crop' | 'activity' | 'reason' | 'date' | 'status'>>,
+): Promise<CalendarTask> {
+  const result = await requestJson<{ task: CalendarTask }>(`/calendar/tasks/${encodeURIComponent(taskId)}`, {
+    method: 'PATCH',
+    body: JSON.stringify(changes),
+  })
+  return result.task
+}
+
+export async function deleteCalendarTask(taskId: string): Promise<void> {
+  await requestJson<{ deleted: boolean }>(`/calendar/tasks/${encodeURIComponent(taskId)}`, {
+    method: 'DELETE',
+  })
+}
+
+export async function streamFarmChat(
+  message: string,
+  history: ChatTurn[],
+  onText: (text: string) => void,
+): Promise<string> {
+  const headers = new Headers({
+    Accept: 'text/event-stream',
+    'Content-Type': 'application/json',
+  })
+  const token = getToken()
+  if (token) headers.set('Authorization', `Bearer ${token}`)
+
+  let response: Response
   try {
-    return new Date(`${isoDate}T12:00:00`).toLocaleDateString(undefined, {
-      weekday: 'short',
+    response = await fetch(`${API_BASE}/chat`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ message, history: history.slice(-10) }),
     })
-  } catch {
-    return isoDate
+  } catch (error) {
+    if (error instanceof TypeError) {
+      throw new ApiError(
+        'We’re having trouble connecting. Check your connection and try again.',
+        0,
+      )
+    }
+    throw error
   }
-}
 
-export function fullDateLabel(isoDate: string): string {
+  if (!response.ok) {
+    throw new ApiError(getHttpErrorMessage('/chat', response.status), response.status)
+  }
+  if (!response.body) {
+    throw new ApiError(
+      'The farm assistant couldn’t reply. Please try again.',
+      response.status,
+    )
+  }
+
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  let reply = ''
+
+  const handleEvent = (block: string) => {
+    let eventType = 'message'
+    const dataLines: string[] = []
+    for (const line of block.split(/\r?\n/)) {
+      if (line.startsWith('event:')) eventType = line.slice(6).trim()
+      if (line.startsWith('data:')) dataLines.push(line.slice(5).trimStart())
+    }
+    if (eventType === 'done' || dataLines.length === 0) return
+
+    const eventData = dataLines.join('\n')
+    if (eventType === 'token') {
+      const tokenData: unknown = JSON.parse(eventData)
+      if (
+        tokenData &&
+        typeof tokenData === 'object' &&
+        'text' in tokenData &&
+        typeof tokenData.text === 'string'
+      ) {
+        reply += tokenData.text
+        onText(reply)
+      }
+    } else if (eventType === 'error') {
+      const errorData: unknown = JSON.parse(eventData)
+      const message =
+        errorData &&
+        typeof errorData === 'object' &&
+        'message' in errorData &&
+        typeof errorData.message === 'string'
+          ? errorData.message
+          : 'The farm assistant couldn’t reply. Please try again.'
+      throw new ApiError(message, 502)
+    }
+  }
+
   try {
-    return new Date(`${isoDate}T12:00:00`).toLocaleDateString(undefined, {
-      weekday: 'long',
-      month: 'short',
-      day: 'numeric',
-    })
-  } catch {
-    return isoDate
+    while (true) {
+      const { done, value } = await reader.read()
+      buffer += decoder.decode(value, { stream: !done })
+      const blocks = buffer.split(/\r?\n\r?\n/)
+      buffer = blocks.pop() ?? ''
+      for (const block of blocks) handleEvent(block)
+      if (done) break
+    }
+    if (buffer.trim()) handleEvent(buffer)
+  } catch (error) {
+    await reader.cancel()
+    throw error
+  } finally {
+    reader.releaseLock()
   }
-}
 
-export function rainIcon(probability: number | null | undefined): string {
-  if (probability == null) return '🌡️'
-  if (probability >= 0.6) return '🌧️'
-  if (probability >= 0.3) return '🌦️'
-  return '☀️'
-}
-
-export function rainLabel(probability: number | null | undefined): string {
-  if (probability == null) return '—'
-  if (probability >= 0.6) return 'Rain likely'
-  if (probability >= 0.3) return 'Possible showers'
-  return 'Mostly clear'
+  if (!reply.trim()) {
+    throw new ApiError(
+      'The farm assistant couldn’t reply. Please try again.',
+      response.status,
+    )
+  }
+  return reply.trim()
 }
